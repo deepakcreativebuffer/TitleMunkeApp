@@ -103,6 +103,7 @@ export const AdvancedSettingsScreen = ({
 
   // ── Join flow ──────────────────────────────────────────────────────────────
   const [joinOpen, setJoinOpen] = useState(false);
+  const [nameOpen, setNameOpen] = useState(false);
   const [selectedId, setSelectedId] = useState('');
   const [message, setMessage] = useState('');
   const [joining, setJoining] = useState(false);
@@ -119,8 +120,23 @@ export const AdvancedSettingsScreen = ({
         const t = String(it.__typename ?? it.userType ?? '').toLowerCase();
         return !t || t === wantedType;
       })
-      .map(it => ({id: it.id ?? it.userId, name: it.name ?? it.email ?? '—'}));
+      .map(it => ({
+        id: it.id ?? it.userId,
+        name: it.name ?? '—',
+        email: it.email ?? '',
+        count:
+          it.activeAgentCount ??
+          it.totalActiveCount ??
+          it.agentCount ??
+          it.activeBrokerCount ??
+          0,
+      }));
   }, [rawList, wantedType]);
+  const selected = useMemo(
+    () => options.find(o => o.id === selectedId),
+    [options, selectedId],
+  );
+  const countLabel = isAgent ? 'Active Agents' : 'Active Brokers';
 
   const onSend = useCallback(async () => {
     if (!selectedId) {
@@ -232,79 +248,156 @@ export const AdvancedSettingsScreen = ({
         onRequestClose={() => setJoinOpen(false)}>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Join {entityLabel}</Text>
-            <Text style={styles.modalSub}>
-              Select {isAgent ? 'a broker' : 'an organisation'} to send a join
-              request.
-            </Text>
+            <View style={styles.modalHead}>
+              <Text style={styles.modalTitle}>Join {entityLabel}</Text>
+              <TouchableOpacity
+                hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}
+                onPress={() => setJoinOpen(false)}>
+                <Text style={styles.modalClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.modalDivider} />
 
-            <ScrollView
-              style={styles.optionList}
-              keyboardShouldPersistTaps="handled">
-              {listLoading ? (
-                <ActivityIndicator
-                  color={appColors.maroon}
-                  style={{marginVertical: scaleWidth(16)}}
-                />
-              ) : options.length === 0 ? (
-                <Text style={styles.optionEmpty}>
-                  No {entityLabel.toLowerCase()}s available.
-                </Text>
-              ) : (
-                options.map(o => {
-                  const active = o.id === selectedId;
-                  return (
-                    <TouchableOpacity
-                      key={o.id}
-                      activeOpacity={0.7}
-                      style={styles.optionRow}
-                      onPress={() => setSelectedId(o.id)}>
-                      <Text
-                        style={[
-                          styles.optionText,
-                          active && styles.optionActive,
-                        ]}
-                        numberOfLines={1}>
-                        {o.name}
+            {listLoading ? (
+              <ActivityIndicator
+                color={appColors.maroon}
+                style={{marginVertical: scaleWidth(20)}}
+              />
+            ) : options.length === 0 ? (
+              <Text style={styles.optionEmpty}>
+                No {entityLabel.toLowerCase()}s available.
+              </Text>
+            ) : (
+              <>
+                {/* Name dropdown */}
+                <Text style={styles.label}>Name</Text>
+                <View style={styles.nameWrap}>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    style={styles.nameChip}
+                    onPress={() => setNameOpen(o => !o)}>
+                    <Text
+                      style={[
+                        styles.nameChipText,
+                        !selected && {color: appColors.gray},
+                      ]}
+                      numberOfLines={1}>
+                      {selected?.name ?? 'Select'}
+                    </Text>
+                    <Image
+                      source={icChevron}
+                      style={[
+                        styles.nameChevron,
+                        nameOpen && {transform: [{rotate: '-90deg'}]},
+                      ]}
+                    />
+                  </TouchableOpacity>
+                  {nameOpen ? (
+                    <View style={styles.nameDropdown}>
+                      <ScrollView
+                        style={{maxHeight: scaleWidth(180)}}
+                        keyboardShouldPersistTaps="handled">
+                        {options.map(o => {
+                          const active = o.id === selectedId;
+                          return (
+                            <TouchableOpacity
+                              key={o.id}
+                              activeOpacity={0.7}
+                              style={styles.optionRow}
+                              onPress={() => {
+                                setSelectedId(o.id);
+                                setNameOpen(false);
+                              }}>
+                              <Text
+                                style={[
+                                  styles.optionText,
+                                  active && styles.optionActive,
+                                ]}
+                                numberOfLines={1}>
+                                {o.name}
+                              </Text>
+                              {active ? (
+                                <Image
+                                  source={icCheckPlain}
+                                  style={styles.optionCheck}
+                                />
+                              ) : null}
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </ScrollView>
+                    </View>
+                  ) : null}
+                </View>
+
+                {/* Selected entity card + message */}
+                {selected ? (
+                  <View style={styles.detailCard}>
+                    <View style={styles.detailRow}>
+                      <View style={styles.detailAvatar}>
+                        <Text style={styles.detailAvatarText}>
+                          {selected.name.charAt(0).toUpperCase()}
+                        </Text>
+                      </View>
+                      <View style={styles.detailInfo}>
+                        <Text style={styles.detailName} numberOfLines={1}>
+                          {selected.name}
+                        </Text>
+                        {selected.email ? (
+                          <Text style={styles.detailEmail} numberOfLines={1}>
+                            {selected.email}
+                          </Text>
+                        ) : null}
+                      </View>
+                      <Text style={styles.detailCount}>
+                        {selected.count} {countLabel}
                       </Text>
-                      {active ? (
-                        <Image source={icCheckPlain} style={styles.optionCheck} />
-                      ) : null}
-                    </TouchableOpacity>
-                  );
-                })
-              )}
-            </ScrollView>
+                    </View>
 
-            <TextInput
-              style={styles.msgInput}
-              value={message}
-              onChangeText={setMessage}
-              placeholder="Message (optional)"
-              placeholderTextColor={appColors.gray}
-              multiline
-              textAlignVertical="top"
-            />
+                    <Text style={styles.detailMsgLabel}>
+                      Add a message (Optional)
+                    </Text>
+                    <TextInput
+                      style={styles.detailMsgInput}
+                      value={message}
+                      onChangeText={setMessage}
+                      placeholder="Add a note"
+                      placeholderTextColor={appColors.gray}
+                      multiline
+                      textAlignVertical="top"
+                    />
+                  </View>
+                ) : null}
+
+                {/* Warning */}
+                <View style={styles.warnBox}>
+                  <Text style={styles.warnText}>
+                    ⚠️ Your request will be reviewed by the {entityLabel.toLowerCase()}.
+                    You will be notified once approved.
+                  </Text>
+                </View>
+              </>
+            )}
 
             <View style={styles.modalActions}>
               <TouchableOpacity
-                activeOpacity={0.8}
+                activeOpacity={0.9}
                 style={[styles.modalBtn, styles.modalCancel]}
                 disabled={joining}
                 onPress={() => setJoinOpen(false)}>
-                <Text style={styles.modalCancelText}>Cancel</Text>
+                <Text style={styles.modalCancelText}>Cancel Request</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 activeOpacity={0.9}
                 style={[
                   styles.modalBtn,
                   styles.modalSend,
-                  (!selectedId || joining) && {opacity: 0.6},
+                  (!selectedId || joining) && {opacity: 0.5},
                 ]}
                 disabled={!selectedId || joining}
                 onPress={onSend}>
                 {joining ? (
-                  <ActivityIndicator color={appColors.white} />
+                  <ActivityIndicator color={appColors.maroon} />
                 ) : (
                   <Text style={styles.modalSendText}>Send Request</Text>
                 )}
@@ -408,18 +501,69 @@ const styles = StyleSheet.create({
     borderRadius: scaleWidth(20),
     padding: scaleWidth(22),
   },
-  modalTitle: {...typography(700, 18, 'coffeeDark'), fontWeight: '700'},
-  modalSub: {
-    ...typography('regular', 13, 'gray'),
-    marginTop: scaleWidth(6),
-    marginBottom: scaleWidth(12),
+  modalHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  optionList: {maxHeight: scaleWidth(240)},
+  modalTitle: {...typography(700, 18, 'coffeeDark'), fontWeight: '700'},
+  modalClose: {fontSize: scaleWidth(18), color: appColors.coffeeDark},
+  modalDivider: {
+    height: 1,
+    backgroundColor: '#F1EDEA',
+    marginTop: scaleWidth(14),
+    marginBottom: scaleWidth(6),
+  },
+  label: {
+    ...typography(600, 14, 'coffeeDark'),
+    fontWeight: '600',
+    marginTop: scaleWidth(14),
+    marginBottom: scaleWidth(8),
+  },
+  nameWrap: {position: 'relative', zIndex: 40},
+  nameChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    height: scaleWidth(50),
+    borderWidth: 1.4,
+    borderColor: appColors.maroon,
+    borderRadius: scaleWidth(12),
+    paddingHorizontal: scaleWidth(14),
+  },
+  nameChipText: {
+    flex: 1,
+    ...typography('regular', 15, 'coffeeDark'),
+    marginRight: scaleWidth(8),
+  },
+  nameChevron: {
+    width: scaleWidth(14),
+    height: scaleWidth(14),
+    tintColor: appColors.gray,
+    transform: [{rotate: '90deg'}],
+  },
+  nameDropdown: {
+    position: 'absolute',
+    top: scaleWidth(54),
+    left: 0,
+    right: 0,
+    backgroundColor: appColors.white,
+    borderRadius: scaleWidth(12),
+    borderWidth: 1,
+    borderColor: appColors.inputBorder,
+    paddingHorizontal: scaleWidth(12),
+    zIndex: 50,
+    elevation: 12,
+    shadowColor: '#3d2014',
+    shadowOffset: {width: 0, height: 8},
+    shadowOpacity: 0.14,
+    shadowRadius: 18,
+  },
   optionRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: scaleWidth(13),
+    paddingVertical: scaleWidth(12),
     borderBottomWidth: 1,
     borderBottomColor: '#F1EDEA',
   },
@@ -433,31 +577,76 @@ const styles = StyleSheet.create({
   optionEmpty: {
     ...typography('regular', 13, 'gray'),
     textAlign: 'center',
-    paddingVertical: scaleWidth(16),
+    paddingVertical: scaleWidth(20),
   },
-  msgInput: {
-    minHeight: scaleWidth(70),
-    borderWidth: 1.4,
-    borderColor: appColors.inputBorder,
+
+  detailCard: {
+    backgroundColor: appColors.background,
+    borderRadius: scaleWidth(14),
+    padding: scaleWidth(14),
+    marginTop: scaleWidth(16),
+  },
+  detailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: appColors.white,
     borderRadius: scaleWidth(12),
+    padding: scaleWidth(12),
+  },
+  detailAvatar: {
+    width: scaleWidth(40),
+    height: scaleWidth(40),
+    borderRadius: scaleWidth(40),
+    backgroundColor: 'rgba(94,23,23,0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: scaleWidth(10),
+  },
+  detailAvatarText: {...typography(700, 16, 'white'), fontWeight: '700'},
+  detailInfo: {flex: 1, paddingRight: scaleWidth(8)},
+  detailName: {...typography(700, 15, 'coffeeDark'), fontWeight: '700'},
+  detailEmail: {...typography('regular', 12, 'gray'), marginTop: scaleWidth(2)},
+  detailCount: {...typography('regular', 12, 'gray')},
+  detailMsgLabel: {
+    ...typography(600, 14, 'coffeeDark'),
+    fontWeight: '600',
+    marginTop: scaleWidth(14),
+    marginBottom: scaleWidth(8),
+  },
+  detailMsgInput: {
+    minHeight: scaleWidth(56),
+    backgroundColor: appColors.white,
+    borderRadius: scaleWidth(10),
     paddingHorizontal: scaleWidth(12),
     paddingVertical: scaleWidth(10),
-    marginTop: scaleWidth(14),
     ...typography('regular', 14, 'coffeeDark'),
   },
+  warnBox: {
+    backgroundColor: appColors.background,
+    borderRadius: scaleWidth(12),
+    padding: scaleWidth(14),
+    marginTop: scaleWidth(16),
+  },
+  warnText: {
+    ...typography('regular', 13, 'coffeeLight'),
+    lineHeight: scaleWidth(19),
+  },
+
   modalActions: {flexDirection: 'row', marginTop: scaleWidth(18)},
   modalBtn: {
     flex: 1,
-    height: scaleWidth(48),
+    height: scaleWidth(50),
     borderRadius: scaleWidth(12),
     alignItems: 'center',
     justifyContent: 'center',
   },
-  modalCancel: {
-    backgroundColor: 'rgba(61,32,20,0.06)',
-    marginRight: scaleWidth(6),
+  modalCancel: {backgroundColor: appColors.maroon, marginRight: scaleWidth(6)},
+  modalCancelText: {...typography(600, 15, 'white'), fontWeight: '600'},
+  modalSend: {
+    backgroundColor: 'rgba(193,82,82,0.08)',
+    borderWidth: 1.4,
+    borderColor: 'rgba(193,82,82,0.5)',
+    marginLeft: scaleWidth(6),
   },
-  modalCancelText: {...typography(600, 15, 'coffeeDark'), fontWeight: '600'},
-  modalSend: {backgroundColor: appColors.maroon, marginLeft: scaleWidth(6)},
-  modalSendText: {...typography(600, 15, 'white'), fontWeight: '600'},
+  modalSendText: {...typography(600, 15, 'maroon'), fontWeight: '600'},
 });
