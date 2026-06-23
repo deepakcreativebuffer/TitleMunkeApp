@@ -8,7 +8,7 @@ const persistedReducer = persistReducer(
   {
     key: 'root',
     storage: AsyncStorage,
-    whitelist: ['user'], // Redux slices to persist
+    whitelist: ['user', 'search'], // Redux slices to persist
   },
   rootReducer,
 );

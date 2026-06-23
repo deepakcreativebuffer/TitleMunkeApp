@@ -1,2 +1,3 @@
 // Redux async thunks for API actions
-// e.g. export { loginThunk } from './auth.thunks';
+export {loginThunk} from './auth.thunks';
+export {startSearch, pollSearch} from '../slices/search.slice';

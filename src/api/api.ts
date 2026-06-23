@@ -1,8 +1,9 @@
 import axios from 'axios';
 import {store} from '../store';
+import {API_BASE_URL} from '../static';
 
 const api = axios.create({
-  baseURL: 'https://api.yourdomain.com', // TODO: Replace with your actual API base URL
+  baseURL: API_BASE_URL,
   timeout: 25000,
   headers: {
     'Content-Type': 'application/json',
@@ -12,10 +13,15 @@ const api = axios.create({
 // Request Interceptor: Attach dynamic user tokens
 api.interceptors.request.use(
   async config => {
-    const token = store.getState()?.user?.token;
+    const user = store.getState()?.user;
+    const token = user?.token; // Cognito ID token
+    const accessToken = user?.accessToken;
 
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+    }
+    if (accessToken) {
+      config.headers['X-Access-Token'] = accessToken;
     }
     return config;
   },
