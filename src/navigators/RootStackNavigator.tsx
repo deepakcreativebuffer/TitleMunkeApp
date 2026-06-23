@@ -4,6 +4,7 @@ import {AppNavigator} from './AppNavigator';
 import {navigationRef} from './navigationRef';
 import {DrawerProvider} from '../context/DrawerContext';
 import {SearchManager} from '../components/SearchManager';
+import {AuthGate} from '../components/AuthGate';
 
 export const RootStackNavigator = () => (
   <NavigationContainer ref={navigationRef}>
@@ -11,5 +12,6 @@ export const RootStackNavigator = () => (
       <AppNavigator />
     </DrawerProvider>
     <SearchManager />
+    <AuthGate />
   </NavigationContainer>
 );

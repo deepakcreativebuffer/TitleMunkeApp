@@ -1,5 +1,11 @@
 export {default as userSlice} from './user.slice';
-export {setUserToken, setUser, clearAuthError, logout} from './user.slice';
+export {
+  setUserToken,
+  setUser,
+  clearAuthError,
+  tokensRefreshed,
+  logout,
+} from './user.slice';
 export {
   currentUserTokenSelector,
   accessTokenSelector,
@@ -7,6 +13,7 @@ export {
   isAuthenticatedSelector,
   authStatusSelector,
   authErrorSelector,
+  userRoleSelector,
 } from './user.slice';
 
 export {default as searchSlice} from './search.slice';

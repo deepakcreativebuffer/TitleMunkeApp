@@ -1,4 +1,4 @@
-import React from 'react';
+import React, {useState, useCallback, useMemo} from 'react';
 import {
   View,
   Text,
@@ -8,59 +8,163 @@ import {
   TouchableOpacity,
   ScrollView,
   StatusBar,
+  ActivityIndicator,
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {appColors, typography, scaleWidth} from '../../global';
 import {useDrawer} from '../../context/DrawerContext';
+import {useAppSelector} from '../../store';
+import {userRoleSelector} from '../../slices';
+import {isOrgRole, isAdminRole} from '../../utils';
+import {DemoRequestsScreen} from './DemoRequestsScreen';
+import {useFetch} from '../../hooks';
+import {ConfirmModal} from '../../components/ConfirmModal';
+import {
+  listRequestsByUserId,
+  processJoinRequest,
+  processLeaveRequest,
+  withdrawRequest,
+} from '../../api/userAdmin.api';
 
 const gridBg = require('../../assets/images/grid-bg.png');
 const icMenu = require('../../assets/images/ic-menu.png');
 const icProfile = require('../../assets/images/ic-profile.png');
 const icFile = require('../../assets/images/ic-file.png');
+const icCheck = require('../../assets/images/ic-check-plain.png');
+const icCircleX = require('../../assets/images/ic-circle-x.png');
 
-type Status = 'PENDING' | 'APPROVED' | 'REJECTED';
+// Tabs map to the API `requestType` param (same as the web).
+const ALL_TABS = [
+  {key: 'pending', label: 'Pending'},
+  {key: 'approved', label: 'Approved'},
+  {key: 'rejected', label: 'Rejected'},
+  {key: 'myRequest', label: 'My Requests'},
+] as const;
 
-type RequestItem = {
+type RequestRow = {
   id: string;
-  broker: string;
-  type: string;
-  datetime: string;
-  status: Status;
+  name: string;
+  email: string;
+  date: string;
+  status: string;
+  message: string;
+  requestType: string;
 };
 
-const REQUESTS: RequestItem[] = [
-  {
-    id: '1',
-    broker: 'Keller Williams Realty',
-    type: 'Full Title Search',
-    datetime: '06/19/2026 · 11:20 AM',
-    status: 'PENDING',
-  },
-  {
-    id: '2',
-    broker: 'RE/MAX Premier',
-    type: 'Lien Search',
-    datetime: '06/18/2026 · 03:42 PM',
-    status: 'APPROVED',
-  },
-  {
-    id: '3',
-    broker: 'Coldwell Banker',
-    type: 'Ownership Verification',
-    datetime: '05/28/2026 · 09:10 AM',
-    status: 'REJECTED',
-  },
-];
-
-const STATUS_STYLE: Record<Status, {bg: string; color: string}> = {
-  PENDING: {bg: 'rgba(169,130,28,0.15)', color: appColors.warning},
-  APPROVED: {bg: 'rgba(30,135,75,0.13)', color: appColors.success},
-  REJECTED: {bg: 'rgba(193,52,52,0.13)', color: appColors.error},
+const fmt = (raw?: string | number): string => {
+  if (!raw) {
+    return '';
+  }
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) {
+    return String(raw);
+  }
+  return d.toLocaleString(undefined, {
+    month: 'short',
+    day: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 };
 
+const statusMeta = (status?: string): {label: string; bg: string; color: string} => {
+  const s = (status ?? '').toUpperCase();
+  if (['ACCEPTED', 'APPROVED', 'SUCCESS', 'COMPLETED'].includes(s)) {
+    return {label: s === 'ACCEPTED' ? 'Approved' : status ?? '', bg: 'rgba(30,135,75,0.13)', color: appColors.success};
+  }
+  if (s === 'REJECTED') {
+    return {label: 'Rejected', bg: 'rgba(193,52,52,0.13)', color: appColors.error};
+  }
+  return {label: status ? status : 'Pending', bg: 'rgba(169,130,28,0.15)', color: appColors.warning};
+};
+
+const mapRequests = (res: any, tab: string): RequestRow[] => {
+  const items: any[] =
+    res?.data ?? res?.items ?? res?.data?.items ?? (Array.isArray(res) ? res : []);
+  return items.map((it, i) => {
+    const name =
+      tab === 'myRequest'
+        ? it.requestType === 'JOIN'
+          ? it.toJoinName
+          : it.requestType === 'LEAVE'
+          ? it.toLeaveName
+          : it.name
+        : it.name;
+    return {
+      id: String(it.id ?? i),
+      name: name ?? '—',
+      email: it.email ?? it.phone ?? '',
+      date: fmt(it.updatedAt ?? it.createdAt),
+      status: it.status ?? 'PENDING',
+      message: it.requestMessage ?? '',
+      requestType: it.requestType ?? '',
+    };
+  });
+};
+
+// Admins see Demo Requests here instead of join/leave requests.
 export const RequestsScreen = () => {
+  const role = useAppSelector(userRoleSelector);
+  return isAdminRole(role) ? <DemoRequestsScreen /> : <JoinRequests />;
+};
+
+const JoinRequests = () => {
   const insets = useSafeAreaInsets();
   const {openDrawer} = useDrawer();
+  const role = useAppSelector(userRoleSelector);
+  const isAgent = role === 'agent';
+  const isOrg = isOrgRole(role);
+  // Agents see only their own requests; orgs have no "My Requests" tab.
+  const TABS = isAgent
+    ? ALL_TABS.filter(t => t.key === 'myRequest')
+    : isOrg
+      ? ALL_TABS.filter(t => t.key !== 'myRequest')
+      : ALL_TABS;
+  const [tab, setTab] = useState<string>(isAgent ? 'myRequest' : 'pending');
+
+  const fetcher = useCallback(() => listRequestsByUserId(tab), [tab]);
+  const {data, loading, reload} = useFetch(fetcher, [tab]);
+  const rows = useMemo(() => (data ? mapRequests(data, tab) : []), [data, tab]);
+
+  // Approve / Reject / Cancel(withdraw) with a confirmation modal.
+  const [pending, setPending] = useState<
+    {row: RequestRow; kind: 'approve' | 'reject' | 'cancel'} | null
+  >(null);
+  const [acting, setActing] = useState(false);
+
+  const runAction = useCallback(async () => {
+    if (!pending) {
+      return;
+    }
+    const {row, kind} = pending;
+    setActing(true);
+    try {
+      if (kind === 'cancel') {
+        await withdrawRequest(row.id);
+      } else {
+        const action = kind === 'approve' ? 'accept' : 'reject';
+        if (row.requestType === 'LEAVE') {
+          await processLeaveRequest(row.id, action);
+        } else {
+          await processJoinRequest(row.id, action);
+        }
+      }
+      setPending(null);
+      reload();
+    } catch {
+      // keep modal open on failure
+    } finally {
+      setActing(false);
+    }
+  }, [pending, reload]);
+
+  const modalCopy = {
+    approve: {title: 'Approve request?', msg: 'This will accept the request.', label: 'Approve', danger: false},
+    reject: {title: 'Reject request?', msg: 'This will reject the request.', label: 'Reject', danger: true},
+    cancel: {title: 'Cancel request?', msg: 'This will withdraw your request.', label: 'Withdraw', danger: true},
+  } as const;
+  const copy = pending ? modalCopy[pending.kind] : null;
 
   return (
     <ImageBackground source={gridBg} resizeMode="cover" style={styles.bg}>
@@ -90,52 +194,144 @@ export const RequestsScreen = () => {
           </TouchableOpacity>
         </View>
 
-        {/* Sub header */}
-        <View style={styles.subHead}>
-          <Text style={styles.subTitle}>My Requests</Text>
-          <Text style={styles.subCount}>{REQUESTS.length} total</Text>
-        </View>
-
-        {/* New request */}
-        <TouchableOpacity activeOpacity={0.9} style={styles.newBtn}>
-          <Text style={styles.newPlus}>+</Text>
-          <Text style={styles.newText}>New Request</Text>
-        </TouchableOpacity>
+        {/* Tabs */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.tabs}>
+          {TABS.map(t => {
+            const active = tab === t.key;
+            return (
+              <TouchableOpacity
+                key={t.key}
+                activeOpacity={0.85}
+                onPress={() => setTab(t.key)}
+                style={[styles.tabChip, active && styles.tabChipActive]}>
+                <Text
+                  style={[styles.tabText, active && styles.tabTextActive]}>
+                  {t.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
 
         {/* Request cards */}
-        {REQUESTS.map(item => {
-          const st = STATUS_STYLE[item.status];
-          return (
-            <View key={item.id} style={styles.card}>
-              <View style={styles.cardTop}>
-                <View style={styles.fileWrap}>
-                  <Image source={icFile} style={styles.fileIcon} />
+        {loading ? (
+          <ActivityIndicator
+            color={appColors.maroon}
+            style={{marginTop: scaleWidth(40)}}
+          />
+        ) : rows.length === 0 ? (
+          <View style={styles.empty}>
+            <Text style={styles.emptyText}>No {tab === 'myRequest' ? '' : tab} requests found.</Text>
+          </View>
+        ) : (
+          rows.map(item => {
+            const st = statusMeta(item.status);
+            const showApproveReject = tab === 'pending';
+            const showCancel =
+              tab === 'myRequest' && item.status.toUpperCase() === 'PENDING';
+            const hasActions = showApproveReject || showCancel;
+            return (
+              <View key={item.id} style={styles.card}>
+                <View style={styles.cardTop}>
+                  <View style={styles.fileWrap}>
+                    <Image source={icFile} style={styles.fileIcon} />
+                  </View>
+                  <View style={styles.brokerCol}>
+                    <Text style={styles.fieldLabel}>
+                      {item.requestType ? item.requestType : 'NAME'}
+                    </Text>
+                    <Text style={styles.brokerName} numberOfLines={1}>
+                      {item.name}
+                    </Text>
+                  </View>
+                  <View style={[styles.pill, {backgroundColor: st.bg}]}>
+                    <Text style={[styles.pillText, {color: st.color}]}>
+                      {st.label}
+                    </Text>
+                  </View>
                 </View>
-                <View style={styles.brokerCol}>
-                  <Text style={styles.fieldLabel}>BROKER</Text>
-                  <Text style={styles.brokerName}>{item.broker}</Text>
-                </View>
-                <View style={[styles.pill, {backgroundColor: st.bg}]}>
-                  <Text style={[styles.pillText, {color: st.color}]}>
-                    {item.status}
-                  </Text>
-                </View>
-              </View>
 
-              <View style={styles.cardBottom}>
-                <View style={styles.col}>
-                  <Text style={styles.fieldLabel}>REQUEST TYPE</Text>
-                  <Text style={styles.fieldValue}>{item.type}</Text>
+                <View style={styles.cardBottom}>
+                  <View style={styles.col}>
+                    <Text style={styles.fieldLabel}>EMAIL / PHONE</Text>
+                    <Text style={styles.fieldValue} numberOfLines={1}>
+                      {item.email || '—'}
+                    </Text>
+                  </View>
+                  <View style={styles.col}>
+                    <Text style={styles.fieldLabel}>DATE</Text>
+                    <Text style={styles.fieldValue}>{item.date || '—'}</Text>
+                  </View>
                 </View>
-                <View style={styles.col}>
-                  <Text style={styles.fieldLabel}>DATE & TIME</Text>
-                  <Text style={styles.fieldValue}>{item.datetime}</Text>
-                </View>
+
+                {hasActions || item.message ? (
+                  <View
+                    style={hasActions ? styles.descActionRow : styles.msgWrap}>
+                    {item.message ? (
+                      <View style={styles.descCol}>
+                        <Text style={styles.fieldLabel}>DESCRIPTION</Text>
+                        <Text
+                          style={styles.msgText}
+                          numberOfLines={hasActions ? 2 : undefined}>
+                          {item.message}
+                        </Text>
+                      </View>
+                    ) : (
+                      <View style={styles.descCol} />
+                    )}
+
+                    {showApproveReject ? (
+                      <View style={styles.actionIcons}>
+                        <TouchableOpacity
+                          activeOpacity={0.8}
+                          style={[styles.iconBtn, styles.iconBtnApprove]}
+                          onPress={() =>
+                            setPending({row: item, kind: 'approve'})
+                          }>
+                          <Image source={icCheck} style={styles.iconApprove} />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          activeOpacity={0.8}
+                          style={[styles.iconBtn, styles.iconBtnReject]}
+                          onPress={() =>
+                            setPending({row: item, kind: 'reject'})
+                          }>
+                          <Image source={icCircleX} style={styles.iconReject} />
+                        </TouchableOpacity>
+                      </View>
+                    ) : showCancel ? (
+                      <View style={styles.actionIcons}>
+                        <TouchableOpacity
+                          activeOpacity={0.8}
+                          style={[styles.iconBtn, styles.iconBtnReject]}
+                          onPress={() =>
+                            setPending({row: item, kind: 'cancel'})
+                          }>
+                          <Image source={icCircleX} style={styles.iconReject} />
+                        </TouchableOpacity>
+                      </View>
+                    ) : null}
+                  </View>
+                ) : null}
               </View>
-            </View>
-          );
-        })}
+            );
+          })
+        )}
       </ScrollView>
+
+      <ConfirmModal
+        visible={!!pending}
+        title={copy?.title ?? ''}
+        message={copy?.msg}
+        confirmLabel={copy?.label}
+        danger={copy?.danger}
+        loading={acting}
+        onConfirm={runAction}
+        onCancel={() => (acting ? null : setPending(null))}
+      />
     </ImageBackground>
   );
 };
@@ -156,7 +352,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: scaleWidth(14),
+    marginBottom: scaleWidth(16),
   },
   iconBtnSquare: {
     width: scaleWidth(44),
@@ -186,42 +382,33 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  subHead: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: scaleWidth(14),
-  },
-  subTitle: {
-    ...typography(700, 17, 'coffeeDark'),
-    fontWeight: '700',
-  },
-  subCount: {
-    ...typography('regular', 13, 'gray'),
-  },
-
-  newBtn: {
-    height: scaleWidth(54),
-    borderRadius: scaleWidth(14),
-    backgroundColor: appColors.maroon,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+  tabs: {
+    paddingVertical: scaleWidth(2),
     marginBottom: scaleWidth(16),
-    ...shadow,
-    shadowOpacity: 0.18,
   },
-  newPlus: {
-    color: appColors.white,
-    fontSize: scaleWidth(20),
-    fontWeight: '500',
-    marginRight: scaleWidth(8),
-    marginTop: scaleWidth(-2),
+  tabChip: {
+    paddingHorizontal: scaleWidth(16),
+    paddingVertical: scaleWidth(9),
+    borderRadius: scaleWidth(10),
+    backgroundColor: appColors.white,
+    borderWidth: 1.2,
+    borderColor: appColors.inputBorder,
+    marginRight: scaleWidth(10),
   },
-  newText: {
-    ...typography(600, 16, 'white'),
+  tabChipActive: {
+    backgroundColor: appColors.maroon,
+    borderColor: appColors.maroon,
+  },
+  tabText: {
+    ...typography(600, 13, 'coffeeDark'),
     fontWeight: '600',
   },
+  tabTextActive: {
+    color: appColors.white,
+  },
+
+  empty: {alignItems: 'center', marginTop: scaleWidth(50)},
+  emptyText: {...typography(500, 14, 'gray'), fontWeight: '500'},
 
   card: {
     backgroundColor: appColors.white,
@@ -250,6 +437,7 @@ const styles = StyleSheet.create({
   },
   brokerCol: {
     flex: 1,
+    marginRight: scaleWidth(8),
   },
   brokerName: {
     ...typography(700, 16, 'coffeeDark'),
@@ -282,5 +470,55 @@ const styles = StyleSheet.create({
     ...typography(600, 14, 'coffeeDark'),
     fontWeight: '600',
     marginTop: scaleWidth(4),
+  },
+  msgWrap: {
+    marginTop: scaleWidth(14),
+    paddingTop: scaleWidth(12),
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(61,32,20,0.07)',
+  },
+  msgText: {
+    ...typography('regular', 13, 'coffeeDark'),
+    marginTop: scaleWidth(4),
+    lineHeight: scaleWidth(19),
+  },
+  descActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: scaleWidth(14),
+    paddingTop: scaleWidth(14),
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(61,32,20,0.07)',
+  },
+  descCol: {
+    flex: 1,
+    marginRight: scaleWidth(12),
+  },
+  actionIcons: {
+    flexDirection: 'row',
+  },
+  iconBtn: {
+    width: scaleWidth(42),
+    height: scaleWidth(42),
+    borderRadius: scaleWidth(11),
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: scaleWidth(10),
+  },
+  iconBtnApprove: {
+    backgroundColor: 'rgba(94,23,23,0.08)',
+  },
+  iconBtnReject: {
+    backgroundColor: 'rgba(193,52,52,0.10)',
+  },
+  iconApprove: {
+    width: scaleWidth(19),
+    height: scaleWidth(19),
+    tintColor: appColors.maroon,
+  },
+  iconReject: {
+    width: scaleWidth(20),
+    height: scaleWidth(20),
+    tintColor: appColors.error,
   },
 });

@@ -3,6 +3,7 @@ export type {
   AppScreenProps,
   HomeStackParamList,
   HomeScreenProps,
+  AgentFormParam,
 } from './navigation';
 export type {
   LoginRequest,

@@ -1,4 +1,4 @@
-import React, {useState, useMemo, useCallback} from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,15 +11,20 @@ import {
   StatusBar,
   ActivityIndicator,
 } from 'react-native';
-import {useSafeAreaInsets} from 'react-native-safe-area-context';
-import {useNavigation} from '@react-navigation/native';
-import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
-import {appColors, typography, scaleWidth} from '../../global';
-import {AppStackParamList, HomeScreenProps} from '../../types';
-import {useAppSelector} from '../../store';
-import {userProfileSelector} from '../../slices';
-import {useFetch} from '../../hooks';
-import {listSearchHistories} from '../../api/userAdmin.api';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { appColors, typography, scaleWidth } from '../../global';
+import { AppStackParamList, HomeScreenProps } from '../../types';
+import { useAppSelector } from '../../store';
+import {
+  userProfileSelector,
+  currentSearchSelector,
+  userRoleSelector,
+} from '../../slices';
+import { useFetch } from '../../hooks';
+import { searchStatusMeta } from '../../utils';
+import { listSearchHistories } from '../../api/userAdmin.api';
 
 const gridBg = require('../../assets/images/grid-bg.png');
 const icChevron = require('../../assets/images/ic-chevron.png');
@@ -55,14 +60,24 @@ const formatWhen = (raw?: string | number): string => {
 };
 
 const mapHistory = (res: any): HistoryItem[] => {
+  if (__DEV__) {
+    console.log('[History] raw response:', JSON.stringify(res)?.slice(0, 600));
+  }
+  // Backend wraps this AppSync-style: { data: { listSearchHistories: { items } } }
   const items: any[] =
-    res?.items ?? res?.data?.items ?? res?.data ?? (Array.isArray(res) ? res : []);
+    res?.data?.listSearchHistories?.items ??
+    res?.listSearchHistories?.items ??
+    res?.items ??
+    res?.data?.items ??
+    (Array.isArray(res) ? res : []);
   return items.map((it, i) => ({
-    id: String(it.id ?? it.searchId ?? i),
+    id: String(it.id ?? it.search_id ?? i),
     address: it.address ?? it.searchAddress ?? '—',
-    when: formatWhen(it.createdAt ?? it.searchedAt ?? it.updatedAt),
-    status: (it.status ?? 'SUCCESS').toUpperCase(),
-    searchId: it.searchId ?? it.id,
+    when: formatWhen(
+      it.created_at ?? it.createdAt ?? it.property_summary?.['Date of Search'],
+    ),
+    status: String(it.status ?? 'SUCCESS'),
+    searchId: it.search_id ?? it.searchId ?? it.id,
   }));
 };
 
@@ -70,24 +85,27 @@ export const SearchHistoryScreen = ({
   navigation,
 }: HomeScreenProps<'SearchHistory'>) => {
   const insets = useSafeAreaInsets();
-  const rootNav =
-    useNavigation<NativeStackNavigationProp<AppStackParamList>>();
+  const rootNav = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
   const profile = useAppSelector(userProfileSelector);
+  const liveSearch = useAppSelector(currentSearchSelector);
+  const role = useAppSelector(userRoleSelector);
+  const isAgent = role === 'agent';
   const brokerId = profile?.sub;
   const [query, setQuery] = useState('');
 
   const fetcher = useCallback(
     () =>
       listSearchHistories({
-        userType: 'broker',
-        brokerId,
+        userType: role,
+        ...(isAgent ? {} : {brokerId}),
         userId: brokerId,
         limit: 50,
       }),
-    [brokerId],
+    [role, isAgent, brokerId],
   );
-  const {data, loading} = useFetch(fetcher, [brokerId]);
-
+  // Re-fetch when an in-flight search changes state (e.g. → SUCCESS).
+  const { data, loading } = useFetch(fetcher, [brokerId, liveSearch.status]);
+  console.log('data>>>>>', JSON.stringify(data, null, 2));
   const items = useMemo(() => {
     const mapped = data ? mapHistory(data) : [];
     if (!query.trim()) {
@@ -108,15 +126,17 @@ export const SearchHistoryScreen = ({
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
           styles.scroll,
-          {paddingTop: insets.top + scaleWidth(10)},
-          {paddingBottom: insets.bottom + scaleWidth(110)},
-        ]}>
+          { paddingTop: insets.top + scaleWidth(10) },
+          { paddingBottom: insets.bottom + scaleWidth(110) },
+        ]}
+      >
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backBtn}
             activeOpacity={0.8}
-            onPress={() => navigation.goBack()}>
+            onPress={() => navigation.goBack()}
+          >
             <Image source={icChevron} style={styles.backIcon} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Search History</Text>
@@ -141,19 +161,27 @@ export const SearchHistoryScreen = ({
         {loading ? (
           <ActivityIndicator
             color={appColors.maroon}
-            style={{marginTop: scaleWidth(40)}}
+            style={{ marginTop: scaleWidth(40) }}
           />
         ) : items.length === 0 ? (
           <View style={styles.empty}>
             <Text style={styles.emptyText}>No search history yet.</Text>
           </View>
         ) : (
-          items.map(item => (
+          items.map(item => {
+            const liveOverride =
+              item.searchId && item.searchId === liveSearch.searchId
+                ? liveSearch.status
+                : item.status;
+            const meta = searchStatusMeta(liveOverride);
+            return (
             <View key={item.id} style={styles.card}>
               <View style={styles.cardTop}>
                 <Text style={styles.address}>{item.address}</Text>
-                <View style={styles.statusPill}>
-                  <Text style={styles.statusText}>{item.status}</Text>
+                <View style={[styles.statusPill, {backgroundColor: meta.bg}]}>
+                  <Text style={[styles.statusText, {color: meta.color}]}>
+                    {meta.label}
+                  </Text>
                 </View>
               </View>
 
@@ -174,19 +202,22 @@ export const SearchHistoryScreen = ({
                       when: item.when,
                       searchId: item.searchId,
                     })
-                  }>
+                  }
+                >
                   <Image source={icEye} style={styles.actionIconPrimary} />
                   <Text style={styles.actionTextPrimary}>View report</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   activeOpacity={0.8}
-                  style={[styles.actionBtn, styles.actionSecondary]}>
+                  style={[styles.actionBtn, styles.actionSecondary]}
+                >
                   <Image source={icLink} style={styles.actionIconSecondary} />
                   <Text style={styles.actionTextSecondary}>Copy link</Text>
                 </TouchableOpacity>
               </View>
             </View>
-          ))
+            );
+          })
         )}
       </ScrollView>
     </ImageBackground>
@@ -195,17 +226,17 @@ export const SearchHistoryScreen = ({
 
 const shadow = {
   shadowColor: '#3d2014',
-  shadowOffset: {width: 0, height: 8},
+  shadowOffset: { width: 0, height: 8 },
   shadowOpacity: 0.08,
   shadowRadius: 16,
   elevation: 3,
 };
 
 const styles = StyleSheet.create({
-  bg: {flex: 1, backgroundColor: appColors.background},
-  scroll: {paddingHorizontal: scaleWidth(20)},
-  empty: {alignItems: 'center', marginTop: scaleWidth(50)},
-  emptyText: {...typography(500, 14, 'gray'), fontWeight: '500'},
+  bg: { flex: 1, backgroundColor: appColors.background },
+  scroll: { paddingHorizontal: scaleWidth(20) },
+  empty: { alignItems: 'center', marginTop: scaleWidth(50) },
+  emptyText: { ...typography(500, 14, 'gray'), fontWeight: '500' },
 
   header: {
     flexDirection: 'row',
@@ -226,7 +257,7 @@ const styles = StyleSheet.create({
     width: scaleWidth(18),
     height: scaleWidth(18),
     tintColor: appColors.coffeeDark,
-    transform: [{scaleX: -1}],
+    transform: [{ scaleX: -1 }],
   },
   headerTitle: {
     ...typography(700, 18, 'coffeeDark'),

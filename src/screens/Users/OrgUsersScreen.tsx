@@ -1,4 +1,4 @@
-import React, {useState, useCallback, useMemo, useEffect, useRef} from 'react';
+import React, {useCallback, useMemo, useState, useEffect, useRef} from 'react';
 import {
   View,
   Text,
@@ -9,71 +9,33 @@ import {
   ScrollView,
   StatusBar,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {appColors, typography, scaleWidth} from '../../global';
-import {useDrawer} from '../../context/DrawerContext';
-import {useAppSelector} from '../../store';
-import {userProfileSelector} from '../../slices';
-import {useFetch} from '../../hooks';
-import {ConfirmModal} from '../../components/ConfirmModal';
 import {AppStackParamList} from '../../types';
-import {getBrokerAgentDetails, userBulkDelete} from '../../api/userAdmin.api';
+import {useDrawer} from '../../context/DrawerContext';
+import {useFetch} from '../../hooks';
+import {shareCsvInApp} from '../../utils/documents';
+import {ConfirmModal} from '../../components/ConfirmModal';
+import {
+  getOrgBrokersList,
+  getOrgAgentsList,
+  userBulkDelete,
+} from '../../api/userAdmin.api';
 
 const gridBg = require('../../assets/images/grid-bg.png');
 const icMenu = require('../../assets/images/ic-menu.png');
 const icProfile = require('../../assets/images/ic-profile.png');
 const icChevron = require('../../assets/images/ic-chevron.png');
+const icCheckPlain = require('../../assets/images/ic-check-plain.png');
 const icDownload = require('../../assets/images/ic-download.png');
 const icUpload = require('../../assets/images/ic-upload.png');
 const icTrash = require('../../assets/images/ic-trash.png');
 const icEdit = require('../../assets/images/ic-edit.png');
-const icEye = require('../../assets/images/ic-eye.png');
-const icMail = require('../../assets/images/ic-mail.png');
-const icCheckPlain = require('../../assets/images/ic-check-plain.png');
 
-type Agent = {
-  id: string;
-  name: string;
-  email: string;
-  searchLimit: string;
-  searches: number;
-  lastLogin: string;
-  status: string; // raw: ACTIVE | UNCONFIRMED | DELETED | ...
-};
-
-const mapAgents = (res: any): Agent[] => {
-  if (__DEV__) {
-    console.log('[Agents] raw response:', JSON.stringify(res)?.slice(0, 600));
-  }
-  const list: any[] =
-    (Array.isArray(res) ? res : null) ??
-    res?.items ??
-    res?.agents ??
-    res?.data?.getBrokerAgentDetails?.items ??
-    res?.data?.items ??
-    (Array.isArray(res?.data) ? res.data : []);
-  return list.map((a, i) => ({
-    id: String(a.agentId ?? a.id ?? a.userId ?? i),
-    name: a.name ?? a.agentName ?? a.fullName ?? '—',
-    email: a.email ?? '',
-    searchLimit: String(a.searchLimit ?? '10'),
-    searches: Number(a.totalSearches ?? a.searchCount ?? a.searchesThisMonth ?? 0),
-    lastLogin: a.lastLogin
-      ? new Date(a.lastLogin).toLocaleString(undefined, {
-          month: 'short',
-          day: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit',
-        })
-      : '—',
-    status: String(a.status ?? '').toUpperCase(),
-  }));
-};
-
-// Status filter options (map to the agent `status` values).
 const STATUS_OPTIONS = [
   {label: 'All Status', value: 'ALL'},
   {label: 'Active', value: 'ACTIVE'},
@@ -81,8 +43,8 @@ const STATUS_OPTIONS = [
   {label: 'Deleted', value: 'DELETED'},
 ];
 
-const agentStatusMeta = (status: string): {label: string; bg: string; color: string} => {
-  const s = status.toUpperCase();
+const statusMeta = (status: string): {label: string; bg: string; color: string} => {
+  const s = String(status ?? '').toUpperCase();
   if (s === 'ACTIVE') {
     return {label: 'Active', bg: 'rgba(30,135,75,0.12)', color: appColors.success};
   }
@@ -92,49 +54,74 @@ const agentStatusMeta = (status: string): {label: string; bg: string; color: str
   if (s === 'UNCONFIRMED') {
     return {label: 'Unconfirmed', bg: 'rgba(169,130,28,0.15)', color: appColors.warning};
   }
-  return {
-    label: status ? status.charAt(0) + status.slice(1).toLowerCase() : '—',
-    bg: 'rgba(120,120,120,0.14)',
-    color: appColors.gray,
-  };
+  return {label: s || '—', bg: 'rgba(120,120,120,0.14)', color: appColors.gray};
 };
 
-const SECONDARY = [
-  {key: 'download', label: 'Download Template', icon: icDownload},
-  {key: 'upload', label: 'Upload Template', icon: icUpload},
-  {key: 'export', label: 'Export CSV', icon: icDownload},
-];
+const listFrom = (res: any): any[] =>
+  Array.isArray(res) ? res : res?.items ?? res?.data?.items ?? res?.data ?? [];
 
-export const AgentsScreen = () => {
+const mapUsers = (res: any) =>
+  listFrom(res).map((u, i) => ({
+    id: String(u.id ?? u.userId ?? i),
+    name: u.name ?? '—',
+    email: u.email ?? '—',
+    status: String(u.status ?? '').toUpperCase(),
+    teamStrength: u.teamStrength ?? u.agentCount ?? 0,
+    searches: u.totalSearches ?? 0,
+    searchLimit: u.searchLimit ? String(u.searchLimit) : '',
+    brokerId: u.brokerId,
+  }));
+
+export const OrgUsersScreen = () => {
   const insets = useSafeAreaInsets();
   const {openDrawer} = useDrawer();
   const navigation =
     useNavigation<NativeStackNavigationProp<AppStackParamList>>();
-  const profile = useAppSelector(userProfileSelector);
-  const brokerId = profile?.sub;
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [tab, setTab] = useState<'broker' | 'agent'>('broker');
+  const isBroker = tab === 'broker';
 
-  const fetcher = useCallback(
-    () => getBrokerAgentDetails(brokerId as string, true),
-    [brokerId],
+  const brokersFetcher = useCallback(() => getOrgBrokersList({limit: 100}), []);
+  const {
+    data: rawBrokers,
+    loading: brokersLoading,
+    reload: reloadBrokers,
+  } = useFetch(brokersFetcher, []);
+  const agentsFetcher = useCallback(() => getOrgAgentsList({limit: 100}), []);
+  const {
+    data: rawAgents,
+    loading: agentsLoading,
+    reload: reloadAgents,
+  } = useFetch(agentsFetcher, []);
+
+  const allRows = useMemo(
+    () => (isBroker ? mapUsers(rawBrokers) : mapUsers(rawAgents)),
+    [isBroker, rawBrokers, rawAgents],
   );
-  const {data, loading, reload} = useFetch(fetcher, [brokerId]);
-  const allAgents = useMemo(() => (data ? mapAgents(data) : []), [data]);
+  const loading = isBroker ? brokersLoading : agentsLoading;
+  const reload = isBroker ? reloadBrokers : reloadAgents;
 
-  // Status filter (client-side, same as the web).
+  // Status filter (client-side).
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [statusOpen, setStatusOpen] = useState(false);
-  const agents = useMemo(
+  const rows = useMemo(
     () =>
       statusFilter === 'ALL'
-        ? allAgents
-        : allAgents.filter(a => a.status === statusFilter),
-    [allAgents, statusFilter],
+        ? allRows
+        : allRows.filter(r => r.status === statusFilter),
+    [allRows, statusFilter],
   );
   const statusLabel =
     STATUS_OPTIONS.find(o => o.value === statusFilter)?.label ?? 'All Status';
 
-  // Refresh the list when returning from the Add/Edit Agent screen.
+  // Selection / bulk delete.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [pendingDelete, setPendingDelete] = useState<string[] | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  // Reset selection when switching tabs.
+  useEffect(() => setSelected(new Set()), [tab]);
+
+  // Refresh when returning from add/edit.
   const firstFocus = useRef(true);
   useEffect(() => {
     const unsub = navigation.addListener('focus', () => {
@@ -150,24 +137,9 @@ export const AgentsScreen = () => {
   const toggle = (id: string) =>
     setSelected(prev => {
       const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
+      next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
-
-  // Delete (bulk or single) with a confirmation modal.
-  const [pendingDelete, setPendingDelete] = useState<string[] | null>(null);
-  const [deleting, setDeleting] = useState(false);
-
-  const askBulkDelete = useCallback(() => {
-    const ids = Array.from(selected);
-    if (ids.length > 0) {
-      setPendingDelete(ids);
-    }
-  }, [selected]);
 
   const confirmDelete = useCallback(async () => {
     if (!pendingDelete?.length) {
@@ -176,7 +148,7 @@ export const AgentsScreen = () => {
     setDeleting(true);
     try {
       await userBulkDelete(
-        pendingDelete.map(id => ({userType: 'agent', userId: id})),
+        pendingDelete.map(id => ({userType: tab, userId: id})),
       );
       setPendingDelete(null);
       setSelected(new Set());
@@ -186,7 +158,29 @@ export const AgentsScreen = () => {
     } finally {
       setDeleting(false);
     }
-  }, [pendingDelete, reload]);
+  }, [pendingDelete, tab, reload]);
+
+  const onExport = useCallback(() => {
+    const headers = isBroker
+      ? ['Sr. No.', 'Name', 'Email', 'Team Strength', 'Status']
+      : ['Sr. No.', 'Name', 'Email', 'Property Searches', 'Status'];
+    const data = rows.map((r, i) => [
+      i + 1,
+      r.name,
+      r.email,
+      isBroker ? r.teamStrength : r.searches,
+      r.status,
+    ]);
+    shareCsvInApp(`${tab}s-${statusFilter.toLowerCase()}.csv`, headers, data).catch(
+      () => Alert.alert('Export failed', 'Could not generate the CSV.'),
+    );
+  }, [rows, isBroker, tab, statusFilter]);
+
+  const onUploadTemplate = () =>
+    Alert.alert(
+      'Upload Template',
+      'Bulk upload from a CSV/XLSX template will be available soon.',
+    );
 
   return (
     <ImageBackground source={gridBg} resizeMode="cover" style={styles.bg}>
@@ -210,15 +204,35 @@ export const AgentsScreen = () => {
             onPress={openDrawer}>
             <Image source={icMenu} style={styles.headerIcon} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Agents</Text>
+          <Text style={styles.headerTitle}>Users</Text>
           <TouchableOpacity style={styles.iconBtnCircle} activeOpacity={0.8}>
             <Image source={icProfile} style={styles.headerIcon} />
           </TouchableOpacity>
         </View>
 
-        {/* Title + filter */}
+        {/* Tabs */}
+        <View style={styles.tabs}>
+          {(['broker', 'agent'] as const).map(t => {
+            const active = tab === t;
+            return (
+              <TouchableOpacity
+                key={t}
+                activeOpacity={0.85}
+                onPress={() => setTab(t)}
+                style={[styles.tabChip, active && styles.tabChipActive]}>
+                <Text style={[styles.tabText, active && styles.tabTextActive]}>
+                  {t === 'broker' ? 'Brokers' : 'Agents'}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* Title + status filter */}
         <View style={styles.titleRow}>
-          <Text style={styles.title}>All Agents</Text>
+          <Text style={styles.title}>
+            {isBroker ? 'All Brokers' : 'All Agents'}
+          </Text>
           <View style={styles.statusWrap}>
             <TouchableOpacity
               style={styles.statusChip}
@@ -254,10 +268,7 @@ export const AgentsScreen = () => {
                         {opt.label}
                       </Text>
                       {active ? (
-                        <Image
-                          source={icCheckPlain}
-                          style={styles.statusCheck}
-                        />
+                        <Image source={icCheckPlain} style={styles.statusCheck} />
                       ) : null}
                     </TouchableOpacity>
                   );
@@ -267,13 +278,15 @@ export const AgentsScreen = () => {
           </View>
         </View>
 
-        {/* Add agent */}
+        {/* Add */}
         <TouchableOpacity
           activeOpacity={0.9}
           style={styles.addBtn}
-          onPress={() => navigation.navigate('AddAgent')}>
+          onPress={() => navigation.navigate('AddOrgUser', {kind: tab})}>
           <Text style={styles.addPlus}>+</Text>
-          <Text style={styles.addText}>Add Agent</Text>
+          <Text style={styles.addText}>
+            Add {isBroker ? 'Broker' : 'Agent'}
+          </Text>
         </TouchableOpacity>
 
         {/* Secondary actions */}
@@ -281,15 +294,23 @@ export const AgentsScreen = () => {
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.toolbar}>
-          {SECONDARY.map(a => (
-            <TouchableOpacity key={a.key} style={styles.toolChip} activeOpacity={0.8}>
-              <Image source={a.icon} style={styles.toolIcon} />
-              <Text style={styles.toolText}>{a.label}</Text>
-            </TouchableOpacity>
-          ))}
+          <TouchableOpacity
+            style={styles.toolChip}
+            activeOpacity={0.8}
+            onPress={onUploadTemplate}>
+            <Image source={icUpload} style={styles.toolIcon} />
+            <Text style={styles.toolText}>Upload Template</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.toolChip}
+            activeOpacity={0.8}
+            onPress={onExport}>
+            <Image source={icDownload} style={styles.toolIcon} />
+            <Text style={styles.toolText}>Export CSV</Text>
+          </TouchableOpacity>
         </ScrollView>
 
-        {/* Selection action bar (visible when agents are selected) */}
+        {/* Selection bar */}
         {selected.size > 0 ? (
           <View style={styles.selectionBar}>
             <Text style={styles.selectionText}>{selected.size} selected</Text>
@@ -303,7 +324,7 @@ export const AgentsScreen = () => {
               <TouchableOpacity
                 activeOpacity={0.9}
                 style={styles.bulkDeleteBtn}
-                onPress={askBulkDelete}>
+                onPress={() => setPendingDelete(Array.from(selected))}>
                 <Image source={icTrash} style={styles.bulkDeleteIcon} />
                 <Text style={styles.bulkDeleteText}>Delete</Text>
               </TouchableOpacity>
@@ -312,81 +333,71 @@ export const AgentsScreen = () => {
         ) : null}
 
         {/* List */}
-        {loading ? (
+        {loading && rows.length === 0 ? (
           <ActivityIndicator
             color={appColors.maroon}
             style={{marginTop: scaleWidth(40)}}
           />
-        ) : agents.length === 0 ? (
+        ) : rows.length === 0 ? (
           <View style={styles.emptyCard}>
             <Text style={styles.emptyText}>No Records found.</Text>
           </View>
         ) : (
-          agents.map((a, i) => {
-            const isSel = selected.has(a.id);
-            const sMeta = agentStatusMeta(a.status);
+          rows.map((u, i) => {
+            const isSel = selected.has(u.id);
+            const sMeta = statusMeta(u.status);
             return (
-              <View key={a.id} style={styles.card}>
+              <View key={u.id} style={styles.card}>
                 <View style={styles.cardTop}>
                   <TouchableOpacity
                     activeOpacity={0.7}
-                    onPress={() => toggle(a.id)}
+                    onPress={() => toggle(u.id)}
                     style={[styles.checkbox, isSel && styles.checkboxOn]}>
                     {isSel ? <Text style={styles.checkMark}>✓</Text> : null}
                   </TouchableOpacity>
                   <View style={styles.avatar}>
                     <Text style={styles.avatarText}>
-                      {a.name.charAt(0).toUpperCase()}
+                      {u.name.charAt(0).toUpperCase()}
                     </Text>
                   </View>
                   <View style={styles.nameWrap}>
                     <Text style={styles.srNo}>#{i + 1}</Text>
-                    <Text style={styles.agentName}>{a.name}</Text>
+                    <Text style={styles.userName} numberOfLines={1}>
+                      {u.name}
+                    </Text>
+                    <Text style={styles.userEmail} numberOfLines={1}>
+                      {u.email}
+                    </Text>
                   </View>
-                  <View
-                    style={[styles.statusPill, {backgroundColor: sMeta.bg}]}>
+                  <View style={[styles.statusPill, {backgroundColor: sMeta.bg}]}>
                     <Text style={[styles.statusText, {color: sMeta.color}]}>
                       {sMeta.label}
                     </Text>
                   </View>
                 </View>
 
-                <View style={styles.metaRow}>
-                  <View style={styles.metaCol}>
-                    <Text style={styles.metaLabel}>SEARCHES THIS MONTH</Text>
-                    <Text style={styles.metaValue}>{a.searches}</Text>
-                  </View>
-                  <View style={styles.metaCol}>
-                    <Text style={styles.metaLabel}>LAST LOGIN</Text>
-                    <Text style={styles.metaValue}>{a.lastLogin}</Text>
-                  </View>
-                </View>
-
                 <View style={styles.cardActions}>
-                  <TouchableOpacity style={styles.reinviteBtn} activeOpacity={0.8}>
-                    <Image source={icMail} style={styles.reinviteIcon} />
-                    <Text style={styles.reinviteText}>Reinvite</Text>
-                  </TouchableOpacity>
+                  <View style={styles.metaCol}>
+                    <Text style={styles.metaLabel}>
+                      {isBroker ? 'TEAM STRENGTH' : 'PROPERTY SEARCHES'}
+                    </Text>
+                    <Text style={styles.metaValue}>
+                      {isBroker ? u.teamStrength : u.searches}
+                    </Text>
+                  </View>
                   <View style={styles.actionIcons}>
                     <TouchableOpacity
                       style={styles.actionIconBtn}
                       onPress={() =>
-                        navigation.navigate('AgentDetails', {
-                          agentId: a.id,
-                          name: a.name,
-                        })
-                      }>
-                      <Image source={icEye} style={styles.actionView} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.actionIconBtn}
-                      onPress={() =>
-                        navigation.navigate('AddAgent', {
-                          agent: {
-                            id: a.id,
-                            name: a.name,
-                            email: a.email,
-                            searchLimit: a.searchLimit,
+                        navigation.navigate('AddOrgUser', {
+                          kind: tab,
+                          user: {
+                            id: u.id,
+                            name: u.name,
+                            email: u.email,
+                            teamStrength: u.teamStrength,
+                            searchLimit: u.searchLimit,
+                            brokerId: u.brokerId,
                           },
                         })
                       }>
@@ -394,7 +405,7 @@ export const AgentsScreen = () => {
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={styles.actionIconBtn}
-                      onPress={() => setPendingDelete([a.id])}>
+                      onPress={() => setPendingDelete([u.id])}>
                       <Image source={icTrash} style={styles.actionDelete} />
                     </TouchableOpacity>
                   </View>
@@ -407,11 +418,7 @@ export const AgentsScreen = () => {
 
       <ConfirmModal
         visible={!!pendingDelete}
-        title={
-          (pendingDelete?.length ?? 0) > 1
-            ? `Delete ${pendingDelete?.length} agents?`
-            : 'Delete agent?'
-        }
+        title={`Delete ${pendingDelete?.length === 1 ? (isBroker ? 'broker' : 'agent') : `${pendingDelete?.length} ${tab}s`}?`}
         message="This action cannot be undone."
         confirmLabel="Delete"
         danger
@@ -434,7 +441,6 @@ const shadow = {
 const styles = StyleSheet.create({
   bg: {flex: 1, backgroundColor: appColors.background},
   scroll: {paddingHorizontal: scaleWidth(20)},
-
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -464,10 +470,20 @@ const styles = StyleSheet.create({
     height: scaleWidth(22),
     tintColor: appColors.maroon,
   },
-  headerTitle: {
-    ...typography(700, 18, 'coffeeDark'),
-    fontWeight: '700',
+  headerTitle: {...typography(700, 18, 'coffeeDark'), fontWeight: '700'},
+
+  tabs: {flexDirection: 'row', marginBottom: scaleWidth(16)},
+  tabChip: {
+    paddingHorizontal: scaleWidth(22),
+    paddingVertical: scaleWidth(10),
+    borderRadius: scaleWidth(12),
+    marginRight: scaleWidth(10),
+    backgroundColor: appColors.white,
+    ...shadow,
   },
+  tabChipActive: {backgroundColor: appColors.maroon},
+  tabText: {...typography(600, 14, 'coffeeDark'), fontWeight: '600'},
+  tabTextActive: {color: appColors.white},
 
   titleRow: {
     flexDirection: 'row',
@@ -476,14 +492,8 @@ const styles = StyleSheet.create({
     marginBottom: scaleWidth(14),
     zIndex: 50,
   },
-  title: {
-    ...typography(700, 19, 'coffeeDark'),
-    fontWeight: '700',
-  },
-  statusWrap: {
-    position: 'relative',
-    zIndex: 50,
-  },
+  title: {...typography(700, 19, 'coffeeDark'), fontWeight: '700'},
+  statusWrap: {position: 'relative', zIndex: 50},
   statusChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -529,14 +539,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: scaleWidth(14),
     paddingVertical: scaleWidth(12),
   },
-  statusOptionText: {
-    ...typography(500, 14, 'coffeeDark'),
-    fontWeight: '500',
-  },
-  statusOptionTextActive: {
-    ...typography(600, 14, 'maroon'),
-    fontWeight: '600',
-  },
+  statusOptionText: {...typography(500, 14, 'coffeeDark'), fontWeight: '500'},
+  statusOptionTextActive: {...typography(600, 14, 'maroon'), fontWeight: '600'},
   statusCheck: {
     width: scaleWidth(16),
     height: scaleWidth(16),
@@ -561,10 +565,27 @@ const styles = StyleSheet.create({
     marginRight: scaleWidth(8),
     marginTop: scaleWidth(-2),
   },
-  addText: {
-    ...typography(600, 16, 'white'),
-    fontWeight: '600',
+  addText: {...typography(600, 16, 'white'), fontWeight: '600'},
+
+  toolbar: {paddingVertical: scaleWidth(2), marginBottom: scaleWidth(18)},
+  toolChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: appColors.white,
+    borderWidth: 1.4,
+    borderColor: appColors.inputBorder,
+    borderRadius: scaleWidth(10),
+    paddingHorizontal: scaleWidth(14),
+    paddingVertical: scaleWidth(10),
+    marginRight: scaleWidth(10),
   },
+  toolIcon: {
+    width: scaleWidth(16),
+    height: scaleWidth(16),
+    tintColor: appColors.coffeeDark,
+    marginRight: scaleWidth(8),
+  },
+  toolText: {...typography(500, 13, 'coffeeDark'), fontWeight: '500'},
 
   selectionBar: {
     flexDirection: 'row',
@@ -576,23 +597,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: scaleWidth(14),
     marginBottom: scaleWidth(14),
   },
-  selectionText: {
-    ...typography(600, 14, 'maroon'),
-    fontWeight: '600',
-  },
-  selectionActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
+  selectionText: {...typography(600, 14, 'maroon'), fontWeight: '600'},
+  selectionActions: {flexDirection: 'row', alignItems: 'center'},
   clearBtn: {
     paddingHorizontal: scaleWidth(12),
     paddingVertical: scaleWidth(8),
     marginRight: scaleWidth(8),
   },
-  clearText: {
-    ...typography(600, 13, 'coffeeLight'),
-    fontWeight: '600',
-  },
+  clearText: {...typography(600, 13, 'coffeeLight'), fontWeight: '600'},
   bulkDeleteBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -607,53 +619,7 @@ const styles = StyleSheet.create({
     tintColor: appColors.white,
     marginRight: scaleWidth(7),
   },
-  bulkDeleteText: {
-    ...typography(600, 13, 'white'),
-    fontWeight: '600',
-  },
-
-  toolbar: {
-    paddingVertical: scaleWidth(2),
-    marginBottom: scaleWidth(18),
-  },
-  toolChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: appColors.white,
-    borderWidth: 1.4,
-    borderColor: appColors.inputBorder,
-    borderRadius: scaleWidth(10),
-    paddingHorizontal: scaleWidth(14),
-    paddingVertical: scaleWidth(10),
-    marginRight: scaleWidth(10),
-  },
-  toolChipDanger: {
-    borderColor: 'rgba(193,52,52,0.4)',
-    backgroundColor: 'rgba(193,52,52,0.06)',
-  },
-  toolChipDisabled: {
-    opacity: 0.45,
-  },
-  toolIcon: {
-    width: scaleWidth(16),
-    height: scaleWidth(16),
-    tintColor: appColors.coffeeDark,
-    marginRight: scaleWidth(8),
-  },
-  toolText: {
-    ...typography(500, 13, 'coffeeDark'),
-    fontWeight: '500',
-  },
-  toolIconDanger: {
-    width: scaleWidth(16),
-    height: scaleWidth(16),
-    tintColor: appColors.error,
-    marginRight: scaleWidth(8),
-  },
-  toolTextDanger: {
-    ...typography(600, 13, 'error'),
-    fontWeight: '600',
-  },
+  bulkDeleteText: {...typography(600, 13, 'white'), fontWeight: '600'},
 
   emptyCard: {
     backgroundColor: appColors.white,
@@ -662,10 +628,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     ...shadow,
   },
-  emptyText: {
-    ...typography(500, 14, 'gray'),
-    fontWeight: '500',
-  },
+  emptyText: {...typography(500, 14, 'gray'), fontWeight: '500'},
 
   card: {
     backgroundColor: appColors.white,
@@ -674,10 +637,7 @@ const styles = StyleSheet.create({
     marginBottom: scaleWidth(12),
     ...shadow,
   },
-  cardTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
+  cardTop: {flexDirection: 'row', alignItems: 'center'},
   checkbox: {
     width: scaleWidth(20),
     height: scaleWidth(20),
@@ -688,9 +648,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: scaleWidth(12),
   },
-  checkboxOn: {
-    backgroundColor: appColors.maroon,
-  },
+  checkboxOn: {backgroundColor: appColors.maroon},
   checkMark: {
     color: appColors.white,
     fontSize: scaleWidth(12),
@@ -706,46 +664,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: scaleWidth(12),
   },
-  avatarText: {
-    ...typography(700, 16, 'white'),
-    fontWeight: '700',
-  },
-  nameWrap: {flex: 1},
-  srNo: {
-    ...typography(500, 10, 'gray'),
-    fontWeight: '500',
-  },
-  agentName: {
+  avatarText: {...typography(700, 16, 'white'), fontWeight: '700'},
+  nameWrap: {flex: 1, paddingRight: scaleWidth(8)},
+  srNo: {...typography(500, 10, 'gray'), fontWeight: '500'},
+  userName: {
     ...typography(700, 15, 'coffeeDark'),
     fontWeight: '700',
     marginTop: scaleWidth(1),
   },
+  userEmail: {...typography('regular', 12, 'maroon'), marginTop: scaleWidth(2)},
   statusPill: {
     borderRadius: scaleWidth(8),
     paddingHorizontal: scaleWidth(10),
     paddingVertical: scaleWidth(5),
   },
-  statusText: {
-    ...typography(700, 11, 'success'),
-    fontWeight: '700',
-    letterSpacing: 0.4,
-  },
-
-  metaRow: {
-    flexDirection: 'row',
-    marginTop: scaleWidth(14),
-  },
-  metaCol: {flex: 1},
-  metaLabel: {
-    ...typography(600, 9, 'gray'),
-    fontWeight: '600',
-    letterSpacing: 0.6,
-  },
-  metaValue: {
-    ...typography(700, 14, 'coffeeDark'),
-    fontWeight: '700',
-    marginTop: scaleWidth(3),
-  },
+  statusText: {...typography(700, 11, 'success'), fontWeight: '700', letterSpacing: 0.4},
 
   cardActions: {
     flexDirection: 'row',
@@ -756,27 +689,14 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: 'rgba(61,32,20,0.07)',
   },
-  reinviteBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(94,23,23,0.07)',
-    borderRadius: scaleWidth(10),
-    paddingHorizontal: scaleWidth(14),
-    paddingVertical: scaleWidth(9),
+  metaCol: {flex: 1},
+  metaLabel: {...typography(600, 9, 'gray'), fontWeight: '600', letterSpacing: 0.6},
+  metaValue: {
+    ...typography(700, 14, 'coffeeDark'),
+    fontWeight: '700',
+    marginTop: scaleWidth(3),
   },
-  reinviteIcon: {
-    width: scaleWidth(15),
-    height: scaleWidth(15),
-    tintColor: appColors.maroon,
-    marginRight: scaleWidth(7),
-  },
-  reinviteText: {
-    ...typography(600, 13, 'maroon'),
-    fontWeight: '600',
-  },
-  actionIcons: {
-    flexDirection: 'row',
-  },
+  actionIcons: {flexDirection: 'row'},
   actionIconBtn: {
     width: scaleWidth(38),
     height: scaleWidth(38),
@@ -790,11 +710,6 @@ const styles = StyleSheet.create({
     width: scaleWidth(17),
     height: scaleWidth(17),
     tintColor: appColors.coffeeDark,
-  },
-  actionView: {
-    width: scaleWidth(18),
-    height: scaleWidth(18),
-    tintColor: appColors.maroon,
   },
   actionDelete: {
     width: scaleWidth(17),

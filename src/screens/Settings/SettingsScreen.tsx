@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useState, useEffect, useCallback} from 'react';
 import {
   View,
   Text,
@@ -13,8 +13,17 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useNavigation} from '@react-navigation/native';
 import {appColors, typography, scaleWidth} from '../../global';
 import {useAppDispatch, useAppSelector} from '../../store';
-import {userProfileSelector, logout} from '../../slices';
+import {userProfileSelector} from '../../slices';
+import {isAdminRole} from '../../utils';
+import {logoutThunk} from '../../thunks';
 import {useDrawer} from '../../context/DrawerContext';
+import {ConfirmModal} from '../../components/ConfirmModal';
+import {useFetch} from '../../hooks';
+import {
+  fetchEmailPreference,
+  setEmailPreferenceSearchComplete,
+  setEmailPreferenceWeeklyReport,
+} from '../../api/userAdmin.api';
 
 const gridBg = require('../../assets/images/grid-bg.png');
 const icMenu = require('../../assets/images/ic-menu.png');
@@ -23,14 +32,23 @@ const icChevron = require('../../assets/images/ic-chevron.png');
 const icEdit = require('../../assets/images/ic-edit.png');
 const icKey = require('../../assets/images/ic-key.png');
 const icBell = require('../../assets/images/ic-bell.png');
-const icMoon = require('../../assets/images/ic-moon.png');
+const icMail = require('../../assets/images/ic-mail.png');
 const icHelp = require('../../assets/images/ic-help.png');
 const icShield = require('../../assets/images/ic-shield.png');
 const icLogout = require('../../assets/images/ic-logout.png');
 
-const Toggle = ({on, onToggle}: {on: boolean; onToggle: () => void}) => (
+const Toggle = ({
+  on,
+  onToggle,
+  disabled,
+}: {
+  on: boolean;
+  onToggle: () => void;
+  disabled?: boolean;
+}) => (
   <TouchableOpacity
     activeOpacity={0.8}
+    disabled={disabled}
     onPress={onToggle}
     style={[styles.track, on ? styles.trackOn : styles.trackOff]}>
     <View style={styles.thumb} />
@@ -49,11 +67,64 @@ export const SettingsScreen = () => {
   const role = (profile?.groups?.[0] || 'agent').toUpperCase();
   const initial = name.charAt(0).toUpperCase();
 
-  const [notifications, setNotifications] = useState(true);
-  const [darkMode, setDarkMode] = useState(false);
+  // Notification email preferences (fetched, optimistic toggles).
+  const {data: prefData} = useFetch(fetchEmailPreference, []);
+  const [searchComplete, setSearchComplete] = useState(false);
+  const [weekly, setWeekly] = useState(false);
+  const [savingSC, setSavingSC] = useState(false);
+  const [savingW, setSavingW] = useState(false);
 
-  const onLogout = () => {
-    dispatch(logout());
+  useEffect(() => {
+    const p = (prefData as any)?.data ?? prefData;
+    if (p) {
+      setSearchComplete(!!p.emailPreferenceSearchComplete);
+      setWeekly(!!p.emailPreferenceWeeklyReport);
+    }
+  }, [prefData]);
+
+  const toggleSearchComplete = useCallback(async () => {
+    const nextVal = !searchComplete;
+    setSearchComplete(nextVal); // optimistic
+    setSavingSC(true);
+    try {
+      await setEmailPreferenceSearchComplete(nextVal);
+    } catch {
+      setSearchComplete(!nextVal); // rollback
+    } finally {
+      setSavingSC(false);
+    }
+  }, [searchComplete]);
+
+  const toggleWeekly = useCallback(async () => {
+    const nextVal = !weekly;
+    setWeekly(nextVal);
+    setSavingW(true);
+    try {
+      await setEmailPreferenceWeeklyReport(nextVal);
+    } catch {
+      setWeekly(!nextVal);
+    } finally {
+      setSavingW(false);
+    }
+  }, [weekly]);
+
+  const [confirmLogout, setConfirmLogout] = useState(false);
+
+  // AI Governance is admin-only (opens its own screen).
+  const roleLower = (
+    profile?.groups?.[0] ||
+    profile?.role ||
+    'broker'
+  ).toLowerCase();
+  const isAdmin = isAdminRole(roleLower);
+  // Agents/brokers can manage their broker/organisation connection.
+  const showAdvanced = roleLower === 'agent' || roleLower === 'broker';
+
+  const doLogout = () => {
+    setConfirmLogout(false);
+    // Fire the logout flow (audit log + Cognito sign-out + state reset).
+    dispatch(logoutThunk());
+    // Navigate immediately; AuthGate also enforces this once state clears.
     const root = navigation.getParent?.() ?? navigation;
     root.reset({index: 0, routes: [{name: 'LoginScreen'}]});
   };
@@ -62,14 +133,16 @@ export const SettingsScreen = () => {
     icon,
     label,
     showDivider,
+    onPress,
   }: {
     icon: number;
     label: string;
     showDivider: boolean;
+    onPress?: () => void;
   }) => (
     <View>
       {showDivider ? <View style={styles.divider} /> : null}
-      <TouchableOpacity style={styles.row} activeOpacity={0.7}>
+      <TouchableOpacity style={styles.row} activeOpacity={0.7} onPress={onPress}>
         <View style={styles.rowIconWrap}>
           <Image source={icon} style={styles.rowIcon} />
         </View>
@@ -128,30 +201,61 @@ export const SettingsScreen = () => {
         {/* Account */}
         <Text style={styles.sectionLabel}>ACCOUNT</Text>
         <View style={styles.card}>
-          <NavRow icon={icEdit} label="Edit profile" showDivider={false} />
-          <NavRow icon={icKey} label="Change password" showDivider />
+          <NavRow
+            icon={icEdit}
+            label="Edit profile"
+            showDivider={false}
+            onPress={() => navigation.navigate('EditProfile')}
+          />
+          {isAdmin ? (
+            <NavRow
+              icon={icShield}
+              label="AI Governance"
+              showDivider
+              onPress={() => navigation.navigate('AiGovernance')}
+            />
+          ) : null}
+          <NavRow
+            icon={icKey}
+            label="Change password"
+            showDivider
+            onPress={() => navigation.navigate('ChangePassword')}
+          />
+          {showAdvanced ? (
+            <NavRow
+              icon={icShield}
+              label="Advanced Settings"
+              showDivider
+              onPress={() => navigation.navigate('AdvancedSettings')}
+            />
+          ) : null}
         </View>
 
-        {/* Preferences */}
-        <Text style={styles.sectionLabel}>PREFERENCES</Text>
+        {/* Notifications */}
+        <Text style={styles.sectionLabel}>NOTIFICATIONS</Text>
         <View style={styles.card}>
           <View style={styles.row}>
             <View style={styles.rowIconWrap}>
               <Image source={icBell} style={styles.rowIcon} />
             </View>
-            <Text style={styles.rowLabel}>Notifications</Text>
+            <Text style={[styles.rowLabel, styles.rowLabelWrap]}>
+              Email me when a search is completed
+            </Text>
             <Toggle
-              on={notifications}
-              onToggle={() => setNotifications(v => !v)}
+              on={searchComplete}
+              onToggle={toggleSearchComplete}
+              disabled={savingSC}
             />
           </View>
           <View style={styles.divider} />
           <View style={styles.row}>
             <View style={styles.rowIconWrap}>
-              <Image source={icMoon} style={styles.rowIcon} />
+              <Image source={icMail} style={styles.rowIcon} />
             </View>
-            <Text style={styles.rowLabel}>Dark mode</Text>
-            <Toggle on={darkMode} onToggle={() => setDarkMode(v => !v)} />
+            <Text style={[styles.rowLabel, styles.rowLabelWrap]}>
+              Send me a weekly usage summary
+            </Text>
+            <Toggle on={weekly} onToggle={toggleWeekly} disabled={savingW} />
           </View>
         </View>
 
@@ -166,11 +270,21 @@ export const SettingsScreen = () => {
         <TouchableOpacity
           activeOpacity={0.8}
           style={styles.logoutCard}
-          onPress={onLogout}>
+          onPress={() => setConfirmLogout(true)}>
           <Image source={icLogout} style={styles.logoutIcon} />
           <Text style={styles.logoutText}>Log Out</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      <ConfirmModal
+        visible={confirmLogout}
+        title="Log out?"
+        message="You'll need to sign in again to access your account."
+        confirmLabel="Log Out"
+        danger
+        onConfirm={doLogout}
+        onCancel={() => setConfirmLogout(false)}
+      />
     </ImageBackground>
   );
 };
@@ -301,6 +415,10 @@ const styles = StyleSheet.create({
     flex: 1,
     ...typography(500, 15, 'coffeeDark'),
     fontWeight: '500',
+  },
+  rowLabelWrap: {
+    marginRight: scaleWidth(12),
+    lineHeight: scaleWidth(20),
   },
   chevron: {
     width: scaleWidth(14),

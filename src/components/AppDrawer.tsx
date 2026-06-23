@@ -16,7 +16,8 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {appColors, typography, scaleWidth, SCREEN_WIDTH} from '../global';
 import {navigationRef} from '../navigators/navigationRef';
 import {store} from '../store';
-import {logout} from '../slices';
+import {logoutThunk} from '../thunks';
+import {isOrgRole, isAdminRole} from '../utils';
 
 const headerBg = require('../assets/images/drawer-header.png');
 const logoIcon = require('../assets/images/logo-icon.png');
@@ -25,6 +26,7 @@ const icPeople = require('../assets/images/ic-people.png');
 const icFile = require('../assets/images/ic-file.png');
 const icList = require('../assets/images/ic-list.png');
 const icSettings = require('../assets/images/ic-settings.png');
+const icSearch = require('../assets/images/ic-search.png');
 const icLogout = require('../assets/images/ic-logout.png');
 
 const PANEL_W = Math.min(scaleWidth(300), SCREEN_WIDTH * 0.82);
@@ -45,15 +47,40 @@ const ITEMS: Item[] = [
   {key: 'Settings', label: 'Settings', icon: icSettings, route: 'Settings'},
 ];
 
+// Organisations have Search + Users instead of Agents.
+const ORG_ITEMS: Item[] = [
+  {key: 'Dashboard', label: 'Dashboard', icon: icHome, route: 'Home'},
+  {key: 'Search', label: 'Search', icon: icSearch, rootRoute: 'Search'},
+  {key: 'Requests', label: 'Requests', icon: icFile, route: 'Requests'},
+  {key: 'Users', label: 'Users', icon: icPeople, rootRoute: 'OrgUsers'},
+  {key: 'Logs', label: 'Audit Logs', icon: icList, route: 'Logs'},
+  {key: 'Settings', label: 'Settings', icon: icSettings, route: 'Settings'},
+];
+
+// Admins have Search + Demo Requests + Users (4 tabs) + Audit Logs.
+const ADMIN_ITEMS: Item[] = [
+  {key: 'Dashboard', label: 'Dashboard', icon: icHome, route: 'Home'},
+  {key: 'Search', label: 'Search', icon: icSearch, rootRoute: 'Search'},
+  {key: 'Requests', label: 'Demo Requests', icon: icFile, route: 'Requests'},
+  {key: 'Users', label: 'Users', icon: icPeople, rootRoute: 'AdminUsers'},
+  {key: 'Logs', label: 'Audit Logs', icon: icList, route: 'Logs'},
+  {key: 'Settings', label: 'Settings', icon: icSettings, route: 'Settings'},
+];
+
 const routeToKey = (name?: string): string => {
   switch (name) {
     case 'Dashboard':
     case 'Home':
       return 'Dashboard';
+    case 'Search':
+      return 'Search';
     case 'Requests':
       return 'Requests';
     case 'Agents':
       return 'Agents';
+    case 'OrgUsers':
+    case 'AdminUsers':
+      return 'Users';
     case 'Logs':
       return 'Logs';
     case 'Settings':
@@ -72,11 +99,21 @@ export const AppDrawer = ({
 }) => {
   const insets = useSafeAreaInsets();
   const [visible, setVisible] = useState(false);
+  const [confirmLogout, setConfirmLogout] = useState(false);
   const anim = useRef(new Animated.Value(0)).current;
 
   const profile = store.getState().user.user;
   const name = profile?.name || profile?.email?.split('@')[0] || 'agent';
   const email = profile?.email || 'agent@titlemunke.com';
+  const role = (profile?.groups?.[0] || profile?.role || 'broker').toLowerCase();
+  // Each role gets its own menu; agents don't manage other agents.
+  const items = isAdminRole(role)
+    ? ADMIN_ITEMS
+    : isOrgRole(role)
+      ? ORG_ITEMS
+      : role === 'agent'
+        ? ITEMS.filter(i => i.key !== 'Agents')
+        : ITEMS;
   const activeKey = routeToKey(
     navigationRef.isReady() ? navigationRef.getCurrentRoute()?.name : undefined,
   );
@@ -111,9 +148,11 @@ export const AppDrawer = ({
     }
   };
 
-  const onLogout = () => {
+  const doLogout = () => {
+    setConfirmLogout(false);
     onClose();
-    store.dispatch(logout());
+    // Audit log + Cognito sign-out + state reset (best-effort side-effects).
+    store.dispatch(logoutThunk());
     navigationRef.dispatch(
       CommonActions.reset({index: 0, routes: [{name: 'LoginScreen'}]}),
     );
@@ -152,7 +191,7 @@ export const AppDrawer = ({
           {/* Menu */}
           <View style={styles.body}>
             <Text style={styles.menuLabel}>MENU</Text>
-            {ITEMS.map(item => {
+            {items.map(item => {
               const active = item.key === activeKey;
               return (
                 <TouchableOpacity
@@ -180,7 +219,7 @@ export const AppDrawer = ({
 
             <TouchableOpacity
               activeOpacity={0.8}
-              onPress={onLogout}
+              onPress={() => setConfirmLogout(true)}
               style={[styles.item, styles.logoutItem]}>
               <Image
                 source={icLogout}
@@ -194,6 +233,32 @@ export const AppDrawer = ({
             <Text style={styles.version}>v1.0 · Title Munke</Text>
           </View>
         </Animated.View>
+
+        {/* Logout confirmation (inline overlay — avoids nested native modals) */}
+        {confirmLogout ? (
+          <View style={styles.confirmOverlay}>
+            <View style={styles.confirmCard}>
+              <Text style={styles.confirmTitle}>Log out?</Text>
+              <Text style={styles.confirmMsg}>
+                You'll need to sign in again to access your account.
+              </Text>
+              <View style={styles.confirmActions}>
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  style={[styles.confirmBtn, styles.confirmCancel]}
+                  onPress={() => setConfirmLogout(false)}>
+                  <Text style={styles.confirmCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  activeOpacity={0.9}
+                  style={[styles.confirmBtn, styles.confirmDanger]}
+                  onPress={doLogout}>
+                  <Text style={styles.confirmDangerText}>Log Out</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        ) : null}
       </View>
     </Modal>
   );
@@ -297,5 +362,58 @@ const styles = StyleSheet.create({
     ...typography('regular', 11, 'gray'),
     marginTop: scaleWidth(16),
     marginLeft: scaleWidth(8),
+  },
+  confirmOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(20,10,8,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: scaleWidth(32),
+  },
+  confirmCard: {
+    width: '100%',
+    backgroundColor: appColors.white,
+    borderRadius: scaleWidth(20),
+    padding: scaleWidth(22),
+  },
+  confirmTitle: {
+    ...typography(700, 18, 'coffeeDark'),
+    fontWeight: '700',
+  },
+  confirmMsg: {
+    ...typography('regular', 14, 'gray'),
+    marginTop: scaleWidth(8),
+    lineHeight: scaleWidth(20),
+  },
+  confirmActions: {
+    flexDirection: 'row',
+    marginTop: scaleWidth(22),
+  },
+  confirmBtn: {
+    flex: 1,
+    height: scaleWidth(48),
+    borderRadius: scaleWidth(12),
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmCancel: {
+    backgroundColor: 'rgba(61,32,20,0.06)',
+    marginRight: scaleWidth(6),
+  },
+  confirmCancelText: {
+    ...typography(600, 15, 'coffeeDark'),
+    fontWeight: '600',
+  },
+  confirmDanger: {
+    backgroundColor: appColors.error,
+    marginLeft: scaleWidth(6),
+  },
+  confirmDangerText: {
+    ...typography(600, 15, 'white'),
+    fontWeight: '600',
   },
 });

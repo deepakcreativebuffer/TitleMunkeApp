@@ -169,7 +169,9 @@ export const LoginScreen = ({navigation}: AppScreenProps<'LoginScreen'>) => {
               <Text style={styles.fieldError}>{errors.password.message}</Text>
             ) : null}
 
-            <TouchableOpacity style={styles.forgotWrap}>
+            <TouchableOpacity
+              style={styles.forgotWrap}
+              onPress={() => navigation.navigate('ForgotPassword')}>
               <Text style={styles.forgot}>Forgot Password?</Text>
             </TouchableOpacity>
 

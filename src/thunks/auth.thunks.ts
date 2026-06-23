@@ -1,7 +1,10 @@
 import {createAsyncThunk} from '@reduxjs/toolkit';
 import axios from 'axios';
 import {loginRequest} from '../api';
+import {createAuditLog} from '../api/userAdmin.api';
+import {cognitoGlobalSignOut} from '../api/cognito';
 import {LoginRequest, LoginResponse} from '../types';
+import {RootState} from '../store/rootReducer';
 
 export const loginThunk = createAsyncThunk<
   LoginResponse,
@@ -23,3 +26,31 @@ export const loginThunk = createAsyncThunk<
     return rejectWithValue(message);
   }
 });
+
+// Logout: write the audit log ("<role> logged out successfully"), revoke the
+// Cognito session, then let the slices reset their state on `fulfilled`.
+// Each side-effect is best-effort so logout always completes locally.
+export const logoutThunk = createAsyncThunk<void, void, {state: RootState}>(
+  'user/logout',
+  async (_, {getState}) => {
+    const {user, accessToken} = getState().user;
+    const userType = user?.groups?.[0] || user?.role || 'broker';
+    try {
+      if (user?.sub) {
+        await createAuditLog({
+          userId: user.sub,
+          email: user.email ?? '',
+          log_action: 'logout',
+          detail: `${userType} logged out successfully`,
+          isAgent: userType === 'agent',
+          userType,
+        });
+      }
+    } catch {
+      /* audit log is non-critical */
+    }
+    if (accessToken) {
+      await cognitoGlobalSignOut(accessToken);
+    }
+  },
+);

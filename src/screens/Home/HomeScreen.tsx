@@ -1,4 +1,4 @@
-import React, {useState, useCallback} from 'react';
+import React, {useState, useCallback, useMemo, useRef} from 'react';
 import {
   View,
   Text,
@@ -16,27 +16,90 @@ import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {appColors, typography, scaleWidth} from '../../global';
 import {useAppSelector, useAppDispatch} from '../../store';
-import {userProfileSelector, currentSearchSelector} from '../../slices';
+import {
+  userProfileSelector,
+  currentSearchSelector,
+  userRoleSelector,
+} from '../../slices';
 import {startSearch} from '../../thunks';
 import {AppStackParamList, HomeStackParamList} from '../../types';
 import {useDrawer} from '../../context/DrawerContext';
+import {useFetch} from '../../hooks';
+import {searchStatusMeta, isOrgRole, isAdminRole} from '../../utils';
+import {OrgDashboard} from './OrgDashboard';
+import {AdminDashboard} from './AdminDashboard';
+import {
+  listSearchHistories,
+  getBrokerAgentDetails,
+  listTotalSearchesByUserId,
+  listTotalAuditLogsByUserId,
+} from '../../api/userAdmin.api';
+import {
+  searchAddresses,
+  hitAddress,
+  algoliaEnabled,
+  AddressHit,
+} from '../../api/algolia';
 
 const gridBg = require('../../assets/images/grid-bg.png');
 const icMenu = require('../../assets/images/ic-menu.png');
 const icProfile = require('../../assets/images/ic-profile.png');
 const icPin = require('../../assets/images/ic-pin.png');
 const icSearch = require('../../assets/images/ic-search.png');
+const icUserCheck = require('../../assets/images/ic-user-check.png');
+const icUserX = require('../../assets/images/ic-user-x.png');
 const icList = require('../../assets/images/ic-list.png');
 
-type Recent = {id: string; address: string; when: string; status: string};
+type Recent = {
+  id: string;
+  address: string;
+  when: string;
+  status: string;
+  searchId?: string;
+};
 
-const RECENT: Recent[] = [
-  {id: '1', address: '3578 Stone Gate Dr', when: 'Jun 19 · 10:54 AM', status: 'SUCCESS'},
-  {id: '2', address: '2302 W Chew St', when: 'Jun 19 · 10:19 AM', status: 'SUCCESS'},
-  {id: '3', address: '7788 Lonesome Dr', when: 'May 28 · 04:31 PM', status: 'SUCCESS'},
-];
+const fmtWhen = (raw?: string | number): string => {
+  if (!raw) {
+    return '';
+  }
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) {
+    return String(raw);
+  }
+  return d.toLocaleString(undefined, {
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
 
+const mapRecent = (res: any): Recent[] => {
+  const items: any[] =
+    res?.data?.listSearchHistories?.items ??
+    res?.listSearchHistories?.items ??
+    res?.items ??
+    (Array.isArray(res) ? res : []);
+  return items.slice(0, 5).map((it, i) => ({
+    id: String(it.id ?? it.search_id ?? i),
+    address: it.address ?? '—',
+    when: fmtWhen(it.created_at ?? it.createdAt ?? it.property_summary?.['Date of Search']),
+    status: String(it.status ?? 'SUCCESS'),
+    searchId: it.search_id ?? it.searchId ?? it.id,
+  }));
+};
+
+// Dashboard tab routes to the org overview for organisations, otherwise the
+// broker/agent search dashboard.
 export const HomeScreen = () => {
+  const role = useAppSelector(userRoleSelector);
+  if (isAdminRole(role)) {
+    return <AdminDashboard />;
+  }
+  return isOrgRole(role) ? <OrgDashboard /> : <BrokerDashboard />;
+};
+
+const BrokerDashboard = () => {
   const insets = useSafeAreaInsets();
   const navigation =
     useNavigation<NativeStackNavigationProp<HomeStackParamList>>();
@@ -46,12 +109,125 @@ export const HomeScreen = () => {
   const dispatch = useAppDispatch();
   const profile = useAppSelector(userProfileSelector);
   const search = useAppSelector(currentSearchSelector);
+  const role = useAppSelector(userRoleSelector);
+  const isAgent = role === 'agent';
   const firstName =
     profile?.name || profile?.email?.split('@')[0] || 'agent';
-  const [address, setAddress] = useState('');
-  const [confirmed, setConfirmed] = useState(false);
+  const userId = profile?.sub;
+  const brokerId = userId;
+
+  const recentFetcher = useCallback(
+    () =>
+      listSearchHistories({
+        userType: role,
+        ...(isAgent ? {} : {brokerId}),
+        userId,
+        limit: 5,
+      }),
+    [role, isAgent, brokerId, userId],
+  );
+  const {data: recentData, loading: recentLoading} = useFetch(recentFetcher, [
+    brokerId,
+    // re-fetch when a search completes
+    search.status,
+  ]);
+  const recents = useMemo(
+    () => (recentData ? mapRecent(recentData) : []),
+    [recentData],
+  );
+
+  // Broker KPIs — derived from the agents list (same as the web dashboard).
+  const agentsFetcher = useCallback(
+    () =>
+      isAgent || !brokerId
+        ? Promise.resolve(null)
+        : getBrokerAgentDetails(brokerId, true),
+    [brokerId, isAgent],
+  );
+  const {data: agentsData} = useFetch(agentsFetcher, [brokerId, isAgent]);
+  const brokerKpis = useMemo(() => {
+    const res: any = agentsData;
+    const list: any[] = Array.isArray(res)
+      ? res
+      : res?.items ?? res?.agents ?? res?.data?.items ?? res?.data ?? [];
+    const upper = (s: unknown) => String(s ?? '').toUpperCase();
+    return {
+      total: list.length,
+      active: list.filter(a => upper(a.status) === 'ACTIVE').length,
+      inactive: list.filter(a => upper(a.status) === 'UNCONFIRMED').length,
+    };
+  }, [agentsData]);
+
+  // Agent KPIs — total searches + total audit logs by this user.
+  const agentKpiFetcher = useCallback(
+    () =>
+      isAgent && userId
+        ? Promise.all([
+            listTotalSearchesByUserId(userId),
+            listTotalAuditLogsByUserId(userId),
+          ])
+        : Promise.resolve(null),
+    [isAgent, userId],
+  );
+  const {data: agentKpiData} = useFetch(agentKpiFetcher, [isAgent, userId]);
+  const agentKpis = useMemo(() => {
+    const num = (v: any) => {
+      const d = (v as any)?.data ?? v;
+      return d?.totalSearches ?? d?.totalAuditLogs ?? d?.total ?? d?.count ?? 0;
+    };
+    const [s, l] = (agentKpiData as any[]) ?? [];
+    return {totalSearches: num(s), auditLogs: num(l)};
+  }, [agentKpiData]);
+
+  // Cards shown on the dashboard depend on the role.
+  const statCards = isAgent
+    ? [
+        {label: 'Total Searches', value: agentKpis.totalSearches, icon: icSearch},
+        {label: 'Audit Logs', value: agentKpis.auditLogs, icon: icList},
+      ]
+    : [
+        {label: 'Total Agents', value: brokerKpis.total, icon: icProfile},
+        {label: 'Active Agents', value: brokerKpis.active, icon: icUserCheck},
+        {label: 'Inactive Agents', value: brokerKpis.inactive, icon: icUserX},
+      ];
+
+  // Restore the in-flight address + confirmation from the persisted search so
+  // they survive minimize / reopen / cold relaunch until the search completes.
+  const [address, setAddress] = useState(() =>
+    search.status === 'IN_PROGRESS' ? search.address ?? '' : '',
+  );
+  const [confirmed, setConfirmed] = useState(
+    () => search.status === 'IN_PROGRESS',
+  );
   const [error, setError] = useState<string | null>(null);
   const searching = search.status === 'IN_PROGRESS';
+
+  // ---- Algolia address autocomplete ----
+  const [suggestions, setSuggestions] = useState<AddressHit[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const onChangeAddress = useCallback((t: string) => {
+    setAddress(t);
+    setShowSuggestions(true);
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+    if (!algoliaEnabled || !t.trim()) {
+      setSuggestions([]);
+      return;
+    }
+    debounceRef.current = setTimeout(async () => {
+      const hits = await searchAddresses(t);
+      setSuggestions(hits);
+    }, 300);
+  }, []);
+
+  const onSelectSuggestion = useCallback((h: AddressHit) => {
+    setAddress(hitAddress(h));
+    setSuggestions([]);
+    setShowSuggestions(false);
+  }, []);
 
   const onSearch = useCallback(async () => {
     if (searching) {
@@ -116,21 +292,47 @@ export const HomeScreen = () => {
 
         {/* Search card */}
         <View style={styles.searchCard}>
-          <View style={styles.addressInput}>
-            <Image source={icPin} style={styles.pinIcon} />
-            <TextInput
-              style={styles.addressText}
-              value={address}
-              onChangeText={setAddress}
-              placeholder="Enter address here..."
-              placeholderTextColor="rgba(142, 35, 35, 0.55)"
-            />
+          <View style={styles.addressWrap}>
+            <View
+              style={[styles.addressInput, searching && styles.disabledBox]}>
+              <Image source={icPin} style={styles.pinIcon} />
+              <TextInput
+                style={styles.addressText}
+                value={address}
+                onChangeText={onChangeAddress}
+                onFocus={() => setShowSuggestions(true)}
+                autoCorrect={false}
+                editable={!searching}
+                placeholder="Enter address here..."
+                placeholderTextColor="rgba(142, 35, 35, 0.55)"
+              />
+            </View>
+            {showSuggestions && suggestions.length > 0 ? (
+              <View style={styles.suggestBox}>
+                {suggestions.map((h, i) => (
+                  <TouchableOpacity
+                    key={(h.objectID as string) ?? i}
+                    activeOpacity={0.7}
+                    style={[
+                      styles.suggestRow,
+                      i > 0 && styles.suggestDivider,
+                    ]}
+                    onPress={() => onSelectSuggestion(h)}>
+                    <Image source={icPin} style={styles.suggestPin} />
+                    <Text style={styles.suggestText} numberOfLines={1}>
+                      {hitAddress(h)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : null}
           </View>
           <Text style={styles.formatHint}>Format: 123 Hill St</Text>
 
           <TouchableOpacity
-            style={styles.confirmRow}
+            style={[styles.confirmRow, searching && styles.disabledDim]}
             activeOpacity={0.8}
+            disabled={searching}
             onPress={() => setConfirmed(c => !c)}>
             <View
               style={[styles.checkbox, confirmed && styles.checkboxOn]}>
@@ -148,57 +350,69 @@ export const HomeScreen = () => {
             style={[styles.searchBtn, searching && styles.searchBtnDisabled]}
             disabled={searching}
             onPress={onSearch}>
-            {searching ? (
-              <ActivityIndicator color={appColors.white} />
-            ) : (
-              <>
-                <Text style={styles.searchBtnText}>Search</Text>
-                <Image source={icSearch} style={styles.searchBtnIcon} />
-              </>
-            )}
+            <Text style={styles.searchBtnText}>Search</Text>
+            <Image source={icSearch} style={styles.searchBtnIcon} />
           </TouchableOpacity>
+
+          {/* In-progress (search runs server-side / in background) */}
+          {searching ? (
+            <TouchableOpacity
+              activeOpacity={0.9}
+              style={styles.progressBlock}
+              disabled={!search.searchId}
+              onPress={() =>
+                search.searchId &&
+                rootNav.navigate('PropertyReport', {
+                  address: search.address ?? '',
+                  when: '',
+                  searchId: search.searchId,
+                })
+              }>
+              <Text style={styles.progressPercent}>
+                Search in progress {search.percent ?? 0}%
+              </Text>
+              <Text style={styles.progressMessage}>
+                {search.message || 'Initializing title search...'}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
 
-        {/* In-progress search banner (runs server-side in the background) */}
-        {searching && search.searchId ? (
-          <TouchableOpacity
-            activeOpacity={0.9}
-            style={styles.progressBanner}
-            onPress={() =>
-              rootNav.navigate('PropertyReport', {
-                address: search.address ?? '',
-                when: '',
-                searchId: search.searchId as string,
-              })
-            }>
-            <ActivityIndicator color={appColors.maroon} />
-            <Text style={styles.progressText}>
-              Searching {search.address}… {search.percent ? `${search.percent}%` : ''}
-            </Text>
-          </TouchableOpacity>
-        ) : null}
-
-        {/* Stat cards */}
+        {/* Role-based KPIs (same stat-card UI) */}
         <View style={styles.statsRow}>
-          <View style={[styles.statCard, styles.statCardDark]}>
-            <View style={styles.statTop}>
-              <Text style={styles.statLabelLight}>Total Searches</Text>
-              <View style={styles.statBadgeLight}>
-                <Image source={icSearch} style={styles.statBadgeIconLight} />
+          {statCards.map((k, i) => {
+            const dark = !isAgent && i === 0;
+            return (
+              <View
+                key={k.label}
+                style={[
+                  styles.statCard,
+                  dark ? styles.statCardDark : styles.statCardLight,
+                ]}>
+                <View style={styles.statTop}>
+                  <Text
+                    style={dark ? styles.statLabelLight : styles.statLabelDark}
+                    numberOfLines={2}>
+                    {k.label}
+                  </Text>
+                  <View
+                    style={dark ? styles.statBadgeLight : styles.statBadgeDark}>
+                    <Image
+                      source={k.icon}
+                      style={
+                        dark
+                          ? styles.statBadgeIconLight
+                          : styles.statBadgeIconDark
+                      }
+                    />
+                  </View>
+                </View>
+                <Text style={dark ? styles.statNumLight : styles.statNumDark}>
+                  {k.value}
+                </Text>
               </View>
-            </View>
-            <Text style={styles.statNumLight}>5</Text>
-          </View>
-
-          <View style={[styles.statCard, styles.statCardLight]}>
-            <View style={styles.statTop}>
-              <Text style={styles.statLabelDark}>Audit Logs</Text>
-              <View style={styles.statBadgeDark}>
-                <Image source={icList} style={styles.statBadgeIconDark} />
-              </View>
-            </View>
-            <Text style={styles.statNumDark}>15</Text>
-          </View>
+            );
+          })}
         </View>
 
         {/* Recent searches */}
@@ -209,20 +423,53 @@ export const HomeScreen = () => {
           </TouchableOpacity>
         </View>
 
-        {RECENT.map(item => (
-          <View key={item.id} style={styles.recentCard}>
-            <View style={styles.recentPinWrap}>
-              <Image source={icPin} style={styles.recentPin} />
-            </View>
-            <View style={styles.recentBody}>
-              <Text style={styles.recentAddr}>{item.address}</Text>
-              <Text style={styles.recentWhen}>{item.when}</Text>
-            </View>
-            <View style={styles.statusPill}>
-              <Text style={styles.statusText}>{item.status}</Text>
-            </View>
+        {recentLoading && recents.length === 0 ? (
+          <ActivityIndicator
+            color={appColors.maroon}
+            style={{marginTop: scaleWidth(20)}}
+          />
+        ) : recents.length === 0 ? (
+          <View style={styles.recentEmpty}>
+            <Text style={styles.recentEmptyText}>No recent searches yet.</Text>
           </View>
-        ))}
+        ) : (
+          recents.map(item => {
+            // Live status override for the search currently running.
+            const liveOverride =
+              item.searchId && item.searchId === search.searchId
+                ? search.status
+                : item.status;
+            const meta = searchStatusMeta(liveOverride);
+            return (
+            <TouchableOpacity
+              key={item.id}
+              activeOpacity={0.85}
+              style={styles.recentCard}
+              onPress={() =>
+                rootNav.navigate('PropertyReport', {
+                  address: item.address,
+                  when: item.when,
+                  searchId: item.searchId,
+                })
+              }>
+              <View style={styles.recentPinWrap}>
+                <Image source={icPin} style={styles.recentPin} />
+              </View>
+              <View style={styles.recentBody}>
+                <Text style={styles.recentAddr} numberOfLines={1}>
+                  {item.address}
+                </Text>
+                <Text style={styles.recentWhen}>{item.when}</Text>
+              </View>
+              <View style={[styles.statusPill, {backgroundColor: meta.bg}]}>
+                <Text style={[styles.statusText, {color: meta.color}]}>
+                  {meta.label}
+                </Text>
+              </View>
+            </TouchableOpacity>
+            );
+          })
+        )}
       </ScrollView>
     </ImageBackground>
   );
@@ -293,6 +540,10 @@ const styles = StyleSheet.create({
     padding: scaleWidth(18),
     ...shadow,
   },
+  addressWrap: {
+    position: 'relative',
+    zIndex: 20,
+  },
   addressInput: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -301,6 +552,43 @@ const styles = StyleSheet.create({
     borderColor: appColors.inputBorder,
     borderRadius: scaleWidth(12),
     paddingHorizontal: scaleWidth(14),
+  },
+  suggestBox: {
+    position: 'absolute',
+    top: scaleWidth(56),
+    left: 0,
+    right: 0,
+    backgroundColor: appColors.white,
+    borderRadius: scaleWidth(12),
+    borderWidth: 1,
+    borderColor: appColors.inputBorder,
+    paddingVertical: scaleWidth(4),
+    zIndex: 30,
+    elevation: 8,
+    shadowColor: '#3d2014',
+    shadowOffset: {width: 0, height: 8},
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+  },
+  suggestRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: scaleWidth(11),
+    paddingHorizontal: scaleWidth(14),
+  },
+  suggestDivider: {
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(61,32,20,0.06)',
+  },
+  suggestPin: {
+    width: scaleWidth(15),
+    height: scaleWidth(15),
+    tintColor: appColors.maroonLink,
+    marginRight: scaleWidth(10),
+  },
+  suggestText: {
+    flex: 1,
+    ...typography('regular', 14, 'coffeeDark'),
   },
   pinIcon: {
     width: scaleWidth(18),
@@ -360,19 +648,24 @@ const styles = StyleSheet.create({
   searchBtnDisabled: {
     opacity: 0.75,
   },
-  progressBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(94,23,23,0.07)',
-    borderRadius: scaleWidth(14),
-    padding: scaleWidth(14),
-    marginTop: scaleWidth(14),
+  disabledBox: {
+    backgroundColor: 'rgba(0,0,0,0.03)',
   },
-  progressText: {
-    ...typography(600, 13, 'maroon'),
+  disabledDim: {
+    opacity: 0.5,
+  },
+  progressBlock: {
+    alignItems: 'center',
+    marginTop: scaleWidth(18),
+  },
+  progressPercent: {
+    ...typography(600, 15, 'coffeeDark'),
     fontWeight: '600',
-    marginLeft: scaleWidth(10),
-    flex: 1,
+  },
+  progressMessage: {
+    ...typography('regular', 13, 'gray'),
+    marginTop: scaleWidth(8),
+    textAlign: 'center',
   },
   searchBtnText: {
     ...typography(600, 16, 'white'),
@@ -392,65 +685,68 @@ const styles = StyleSheet.create({
   },
   statCard: {
     flex: 1,
-    borderRadius: scaleWidth(18),
-    padding: scaleWidth(16),
-    height: scaleWidth(108),
+    borderRadius: scaleWidth(16),
+    padding: scaleWidth(11),
+    height: scaleWidth(90),
     justifyContent: 'space-between',
+    marginHorizontal: scaleWidth(4),
     ...shadow,
   },
   statCardDark: {
     backgroundColor: appColors.maroon,
-    marginRight: scaleWidth(7),
   },
   statCardLight: {
     backgroundColor: appColors.white,
-    marginLeft: scaleWidth(7),
   },
   statTop: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
   },
   statLabelLight: {
-    ...typography(500, 13, 'white'),
+    flex: 1,
+    ...typography(500, 12, 'white'),
     fontWeight: '500',
+    marginRight: scaleWidth(6),
   },
   statLabelDark: {
-    ...typography(500, 13, 'coffeeDark'),
+    flex: 1,
+    ...typography(500, 12, 'coffeeDark'),
     fontWeight: '500',
+    marginRight: scaleWidth(6),
   },
   statBadgeLight: {
-    width: scaleWidth(32),
-    height: scaleWidth(32),
+    width: scaleWidth(30),
+    height: scaleWidth(30),
     borderRadius: scaleWidth(10),
     backgroundColor: 'rgba(255,255,255,0.18)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   statBadgeDark: {
-    width: scaleWidth(32),
-    height: scaleWidth(32),
+    width: scaleWidth(30),
+    height: scaleWidth(30),
     borderRadius: scaleWidth(10),
     backgroundColor: 'rgba(94,23,23,0.10)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   statBadgeIconLight: {
-    width: scaleWidth(16),
-    height: scaleWidth(16),
+    width: scaleWidth(15),
+    height: scaleWidth(15),
     tintColor: appColors.white,
   },
   statBadgeIconDark: {
-    width: scaleWidth(16),
-    height: scaleWidth(16),
+    width: scaleWidth(15),
+    height: scaleWidth(15),
     tintColor: appColors.maroon,
   },
   statNumLight: {
-    ...typography(700, 32, 'white'),
+    ...typography(700, 23, 'white'),
     fontWeight: '700',
   },
   statNumDark: {
-    ...typography(700, 32, 'coffeeDark'),
+    ...typography(700, 23, 'coffeeDark'),
     fontWeight: '700',
   },
 
@@ -469,6 +765,14 @@ const styles = StyleSheet.create({
   viewAll: {
     ...typography(600, 13, 'maroonLink'),
     fontWeight: '600',
+  },
+  recentEmpty: {
+    alignItems: 'center',
+    paddingVertical: scaleWidth(24),
+  },
+  recentEmptyText: {
+    ...typography(500, 13, 'gray'),
+    fontWeight: '500',
   },
   recentCard: {
     flexDirection: 'row',

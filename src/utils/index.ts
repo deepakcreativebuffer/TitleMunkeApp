@@ -56,6 +56,35 @@ function base64UrlDecode(input: string): string {
   return result;
 }
 
+// Normalised display + colors for a search/history status value.
+export type StatusMeta = {label: string; color: string; bg: string};
+
+export const searchStatusMeta = (status?: string): StatusMeta => {
+  const s = (status ?? '').toUpperCase();
+  if (s.includes('PROGRESS')) {
+    return {label: 'In Progress', color: '#A9821C', bg: 'rgba(169,130,28,0.15)'};
+  }
+  if (s.includes('FAIL') || s.includes('STOP') || s.includes('UNSUCCESS')) {
+    return {label: 'Failed', color: '#C13434', bg: 'rgba(193,52,52,0.12)'};
+  }
+  // SUCCESS / SUCCESSFULL / default
+  return {label: 'Success', color: '#1E874B', bg: 'rgba(30,135,75,0.12)'};
+};
+
+// Audit-log `detail` may be a JSON-stringified object — extract a readable
+// value (mirrors the web's valueFromStringifyObject).
+export function valueFromStringifyObject(obj: unknown): string {
+  try {
+    const parsed = JSON.parse(String(obj));
+    const fmt = (v: unknown) => String(v).replace(/organisation/gi, 'organization');
+    return typeof parsed === 'object' && parsed !== null
+      ? Object.values(parsed).map(fmt).join(', ')
+      : fmt(parsed);
+  } catch {
+    return String(obj ?? '').replace(/organisation/gi, 'organization');
+  }
+}
+
 // Decode the payload of a JWT. Returns null on any malformed input.
 export function decodeJwt<T = Record<string, unknown>>(
   token?: string | null,
@@ -73,3 +102,13 @@ export function decodeJwt<T = Record<string, unknown>>(
     return null;
   }
 }
+
+// ── Role helpers ─────────────────────────────────────────────────────────────
+// Cognito groups use British spelling ("organisation") in some places and
+// American ("organization") in others, so accept both everywhere.
+export const isOrgRole = (role?: string): boolean =>
+  role === 'organisation' || role === 'organization';
+
+export const isAgentRole = (role?: string): boolean => role === 'agent';
+
+export const isAdminRole = (role?: string): boolean => role === 'admin';

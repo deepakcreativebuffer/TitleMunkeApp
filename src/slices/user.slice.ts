@@ -1,6 +1,6 @@
 import {createSlice, PayloadAction} from '@reduxjs/toolkit';
 import {RootState} from '../store/rootReducer';
-import {loginThunk} from '../thunks';
+import {loginThunk, logoutThunk} from '../thunks';
 import {AuthUser, IdTokenClaims, LoginResponse} from '../types';
 import {decodeJwt} from '../utils';
 
@@ -12,6 +12,7 @@ interface UserState {
   accessToken: string | null;
   refreshToken: string | null;
   expiresAt: number | null; // epoch ms
+  clientId: string | null; // Cognito app client id (for token refresh)
   isAuthenticated: boolean;
   status: Status;
   error: string | null;
@@ -23,6 +24,7 @@ const initialState: UserState = {
   accessToken: null,
   refreshToken: null,
   expiresAt: null,
+  clientId: null,
   isAuthenticated: false,
   status: 'idle',
   error: null,
@@ -57,6 +59,23 @@ const userSlice = createSlice({
     clearAuthError: state => {
       state.error = null;
     },
+    // Applied after a silent Cognito token refresh.
+    tokensRefreshed: (
+      state,
+      action: PayloadAction<{
+        idToken: string;
+        accessToken?: string | null;
+        expiresIn?: number;
+      }>,
+    ) => {
+      state.token = action.payload.idToken;
+      if (action.payload.accessToken) {
+        state.accessToken = action.payload.accessToken;
+      }
+      state.expiresAt = action.payload.expiresIn
+        ? Date.now() + action.payload.expiresIn * 1000
+        : state.expiresAt;
+    },
     logout: () => initialState,
   },
   extraReducers: builder => {
@@ -86,6 +105,9 @@ const userSlice = createSlice({
             userFromIdToken(idToken ?? undefined) ??
             action.payload?.user ??
             null;
+          // App client id for refreshing tokens later (from ID-token `aud`).
+          const claims = decodeJwt<{aud?: string}>(idToken ?? undefined);
+          state.clientId = claims?.aud ?? state.clientId;
           state.isAuthenticated = !!state.token;
           state.status = 'succeeded';
           state.error = null;
@@ -95,11 +117,14 @@ const userSlice = createSlice({
         state.status = 'failed';
         state.isAuthenticated = false;
         state.error = action.payload ?? 'Login failed. Please try again.';
-      });
+      })
+      // Always clear auth state when logout finishes (side-effects best-effort).
+      .addCase(logoutThunk.fulfilled, () => initialState)
+      .addCase(logoutThunk.rejected, () => initialState);
   },
 });
 
-export const {setUserToken, setUser, clearAuthError, logout} =
+export const {setUserToken, setUser, clearAuthError, tokensRefreshed, logout} =
   userSlice.actions;
 
 // Selectors
@@ -111,5 +136,13 @@ export const isAuthenticatedSelector = (state: RootState) =>
   state.user.isAuthenticated;
 export const authStatusSelector = (state: RootState) => state.user.status;
 export const authErrorSelector = (state: RootState) => state.user.error;
+
+// Normalised role of the signed-in user ('broker' | 'agent' | ...).
+export const userRoleSelector = (state: RootState) =>
+  (
+    state.user.user?.groups?.[0] ||
+    state.user.user?.role ||
+    'broker'
+  ).toLowerCase();
 
 export default userSlice.reducer;
