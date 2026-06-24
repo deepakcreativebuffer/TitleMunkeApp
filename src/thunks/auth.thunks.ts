@@ -3,6 +3,7 @@ import axios from 'axios';
 import {loginRequest} from '../api';
 import {createAuditLog} from '../api/userAdmin.api';
 import {cognitoGlobalSignOut} from '../api/cognito';
+import {unregisterFcmToken} from '../services/fcm';
 import {LoginRequest, LoginResponse} from '../types';
 import {RootState} from '../store/rootReducer';
 
@@ -35,6 +36,9 @@ export const logoutThunk = createAsyncThunk<void, void, {state: RootState}>(
   async (_, {getState}) => {
     const {user, accessToken} = getState().user;
     const userType = user?.groups?.[0] || user?.role || 'broker';
+    // Deregister this device's push token while we're still authenticated, so
+    // the backend stops pushing to it. Best-effort; never blocks logout.
+    await unregisterFcmToken();
     try {
       if (user?.sub) {
         await createAuditLog({

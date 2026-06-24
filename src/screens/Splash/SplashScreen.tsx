@@ -1,4 +1,4 @@
-import React, {useEffect, useRef} from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,15 +9,17 @@ import {
   Easing,
   StatusBar,
 } from 'react-native';
-import {appColors, typography, scaleWidth} from '../../global';
-import {AppScreenProps} from '../../types';
-import {useAppSelector} from '../../store';
-import {isAuthenticatedSelector} from '../../slices';
+import { appColors, typography, scaleWidth } from '../../global';
+import { AppScreenProps } from '../../types';
+import { useAppSelector } from '../../store';
+import { isAuthenticatedSelector } from '../../slices';
 
 const logo = require('../../assets/images/logo.png');
 const streetMap = require('../../assets/images/streetmap.png');
 
-export const SplashScreen = ({navigation}: AppScreenProps<'SplashScreen'>) => {
+export const SplashScreen = ({
+  navigation,
+}: AppScreenProps<'SplashScreen'>) => {
   const progress = useRef(new Animated.Value(0)).current;
   const isAuthenticated = useAppSelector(isAuthenticatedSelector);
 
@@ -35,9 +37,7 @@ export const SplashScreen = ({navigation}: AppScreenProps<'SplashScreen'>) => {
 
     // Route based on persisted auth state: logged-in users skip onboarding.
     const timer = setTimeout(() => {
-      navigation.replace(
-        isAuthenticated ? 'TabNavigator' : 'OnboardingScreen',
-      );
+      navigation.replace(isAuthenticated ? 'TabNavigator' : 'OnboardingScreen');
     }, 2000);
 
     return () => {
@@ -55,7 +55,8 @@ export const SplashScreen = ({navigation}: AppScreenProps<'SplashScreen'>) => {
     <ImageBackground
       source={streetMap}
       resizeMode="cover"
-      style={styles.container}>
+      style={styles.container}
+    >
       <StatusBar
         barStyle="dark-content"
         backgroundColor={appColors.background}
@@ -72,7 +73,7 @@ export const SplashScreen = ({navigation}: AppScreenProps<'SplashScreen'>) => {
 
       <View style={styles.progressTrack}>
         <Animated.View
-          style={[styles.progressBar, {transform: [{translateX}]}]}
+          style={[styles.progressBar, { transform: [{ translateX }] }]}
         />
       </View>
     </ImageBackground>

@@ -21,6 +21,7 @@ import {AppScreenProps} from '../../types';
 import {loginSchema, LoginSchemaType} from '../../schemas';
 import {useAppDispatch, useAppSelector} from '../../store';
 import {loginThunk} from '../../thunks';
+import {registerFcmToken} from '../../services/fcm';
 import {
   authStatusSelector,
   authErrorSelector,
@@ -62,6 +63,9 @@ export const LoginScreen = ({navigation}: AppScreenProps<'LoginScreen'>) => {
   const onSubmit = async (values: LoginSchemaType) => {
     try {
       await dispatch(loginThunk(values)).unwrap();
+      // Register this device with the backend so it can push notifications.
+      // Fire-and-forget: it must not delay or block entering the app.
+      void registerFcmToken();
       navigation.reset({index: 0, routes: [{name: 'TabNavigator'}]});
     } catch {
       // Rejection message is surfaced via the `apiError` selector.

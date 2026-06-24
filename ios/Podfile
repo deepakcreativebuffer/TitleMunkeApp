@@ -17,6 +17,15 @@ end
 target 'TitleMunkeApp' do
   config = use_native_modules!
 
+  # React Native Firebase: the Swift Firebase pods link statically but depend on
+  # GoogleUtilities, which ships without a module map. Generate module maps for
+  # these so they can be imported from Swift as static libraries.
+  pod 'GoogleUtilities', :modular_headers => true
+  pod 'FirebaseCoreInternal', :modular_headers => true
+  pod 'FirebaseCore', :modular_headers => true
+  pod 'FirebaseCoreExtension', :modular_headers => true
+  pod 'FirebaseInstallations', :modular_headers => true
+
   use_react_native!(
     :path => config[:reactNativePath],
     # An absolute path to your application root.
