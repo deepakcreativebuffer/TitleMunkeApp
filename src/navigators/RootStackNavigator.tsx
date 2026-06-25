@@ -4,14 +4,31 @@ import {AppNavigator} from './AppNavigator';
 import {navigationRef} from './navigationRef';
 import {DrawerProvider} from '../context/DrawerContext';
 import {SearchManager} from '../components/SearchManager';
+import {LiveActivityManager} from '../components/LiveActivityManager';
 import {AuthGate} from '../components/AuthGate';
+import TabLevelSearchIndicator from '../components/TabLevelSearchIndicator';
+import { useFCMListener } from '../hooks/useFCMListener';
 
-export const RootStackNavigator = () => (
+export const RootStackNavigator = () =>{ 
+  useFCMListener({
+    onForegroundMessage(message) {
+      console.log("GELLO", JSON.stringify(message))
+    },
+    onInitialNotification(message) {
+      console.log("HELLOO<<<", JSON.stringify(message))
+    },
+    onNotificationOpened(message) {
+      console.log("HELALAAL", JSON.stringify(message))
+    },
+  })
+  return(
   <NavigationContainer ref={navigationRef}>
     <DrawerProvider>
       <AppNavigator />
     </DrawerProvider>
     <SearchManager />
+    <LiveActivityManager />
+    <TabLevelSearchIndicator/>
     <AuthGate />
   </NavigationContainer>
-);
+)};

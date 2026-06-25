@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		0C80B921A6F3F58F76C31292 /* libPods-TitleMunkeApp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 5DCACB8F33CDC322A6C60F78 /* libPods-TitleMunkeApp.a */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
+		18CD70342FEBF62200AA72AE /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 18CD70332FEBF62200AA72AE /* GoogleService-Info.plist */; };
 		1C08A1F15FA3FC9D3E81DED7 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
@@ -19,6 +20,8 @@
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = TitleMunkeApp/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = TitleMunkeApp/Info.plist; sourceTree = "<group>"; };
 		13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = PrivacyInfo.xcprivacy; path = TitleMunkeApp/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		18CD70332FEBF62200AA72AE /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
+		18CD70352FEC028E00AA72AE /* TitleMunkeApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; name = TitleMunkeApp.entitlements; path = TitleMunkeApp/TitleMunkeApp.entitlements; sourceTree = "<group>"; };
 		3B4392A12AC88292D35C810B /* Pods-TitleMunkeApp.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-TitleMunkeApp.debug.xcconfig"; path = "Target Support Files/Pods-TitleMunkeApp/Pods-TitleMunkeApp.debug.xcconfig"; sourceTree = "<group>"; };
 		5709B34CF0A7D63546082F79 /* Pods-TitleMunkeApp.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-TitleMunkeApp.release.xcconfig"; path = "Target Support Files/Pods-TitleMunkeApp/Pods-TitleMunkeApp.release.xcconfig"; sourceTree = "<group>"; };
 		5DCACB8F33CDC322A6C60F78 /* libPods-TitleMunkeApp.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-TitleMunkeApp.a"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -42,6 +45,8 @@
 		13B07FAE1A68108700A75B9A /* TitleMunkeApp */ = {
 			isa = PBXGroup;
 			children = (
+				18CD70352FEC028E00AA72AE /* TitleMunkeApp.entitlements */,
+				18CD70332FEBF62200AA72AE /* GoogleService-Info.plist */,
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				761780EC2CA45674006654EE /* AppDelegate.swift */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
@@ -161,6 +166,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */,
+				18CD70342FEBF62200AA72AE /* GoogleService-Info.plist in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				1C08A1F15FA3FC9D3E81DED7 /* PrivacyInfo.xcprivacy in Resources */,
 			);
@@ -275,6 +281,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = TitleMunkeApp/TitleMunkeApp.entitlements;
 				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = HGJF34LWMR;
 				ENABLE_BITCODE = NO;
@@ -310,6 +317,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = TitleMunkeApp/TitleMunkeApp.entitlements;
 				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = HGJF34LWMR;
 				INFOPLIST_FILE = TitleMunkeApp/Info.plist;

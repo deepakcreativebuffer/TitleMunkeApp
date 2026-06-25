@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "start": "react-native start",
-    "test": "jest"
+    "test": "jest",
+    "dev": "react-native start --reset-cache --client-logs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",
@@ -26,6 +27,7 @@
     "react-hook-form": "^7.79.0",
     "react-native": "0.86.0",
     "react-native-blob-util": "^0.24.10",
+    "react-native-maps": "^1.27.2",
     "react-native-safe-area-context": "^5.5.2",
     "react-native-screens": "^4.25.2",
     "react-redux": "^9.3.0",
