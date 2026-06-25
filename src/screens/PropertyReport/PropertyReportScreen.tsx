@@ -18,6 +18,7 @@ import {AppScreenProps} from '../../types';
 import {useAppSelector} from '../../store';
 import {currentSearchSelector} from '../../slices';
 import {useFetch} from '../../hooks';
+import {cleanSearchMessage} from '../../utils';
 import {getSearchStatus} from '../../api/userAdmin.api';
 import {
   downloadToCache,
@@ -106,7 +107,7 @@ export const PropertyReportScreen = ({
     return {
       status: (d?.status ?? liveStatus ?? 'SUCCESS') as string,
       percent: d?.percent_completion ?? search.percent ?? 0,
-      message: d?.status_message,
+      message: cleanSearchMessage(d?.status_message),
       addressLine: str(d?.address ?? route.params?.address),
       title:
         d?.address && own.county_and_state

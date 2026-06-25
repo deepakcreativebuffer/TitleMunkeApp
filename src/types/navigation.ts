@@ -1,4 +1,5 @@
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
+import type {NearbyProperty} from '../data/nearbyProperties';
 
 export type AppStackParamList = {
   SplashScreen: undefined;
@@ -19,6 +20,15 @@ export type AppStackParamList = {
       longitude?: number;
     }>;
   };
+  NearbySearch: undefined;
+  NearbyMap: {
+    property?: NearbyProperty;
+    properties?: NearbyProperty[];
+    title?: string;
+  };
+  Messages: undefined;
+  Chat: {participantId: string};
+  NewChat: undefined;
   Agents: undefined;
   AddAgent: {agent?: AgentFormParam} | undefined;
   EditProfile: undefined;
@@ -30,6 +40,7 @@ export type AppStackParamList = {
   OrgDetails: {orgId: string; name?: string};
   AdminBrokerDetails: {brokerId: string; name?: string};
   Search: undefined;
+  Logs: undefined;
   OrgUsers: undefined;
   AdminUsers: undefined;
   AddOrgUser: {

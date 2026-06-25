@@ -6,6 +6,10 @@ export {HomeScreen} from './Home/HomeScreen';
 export {SearchHistoryScreen} from './SearchHistory/SearchHistoryScreen';
 export {PropertyReportScreen} from './PropertyReport/PropertyReportScreen';
 export {SearchProgressScreen} from './SearchProgress/SearchProgressScreen';
+export {NearbySearchScreen} from './NearbySearch/NearbySearchScreen';
+export {ConversationListScreen} from './Messages/ConversationListScreen';
+export {ChatScreen} from './Messages/ChatScreen';
+export {NewChatScreen} from './Messages/NewChatScreen';
 // NOTE: SearchMapScreen is intentionally NOT re-exported here. It pulls in
 // react-native-maps, whose native module would otherwise load at app startup
 // and crash the whole app on a binary that wasn't rebuilt with the pod. It is

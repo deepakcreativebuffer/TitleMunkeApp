@@ -1,40 +1,99 @@
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native'
-import React from 'react'
-import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs'
-import { appColors, typography } from '../global'
-import { scaleWidth } from '../global/dimensions';
-import { useAppSelector } from '../store';
-import { currentSearchSelector } from '../slices';
+import {ActivityIndicator, Text, TouchableOpacity, View} from 'react-native';
+import React, {useEffect, useState} from 'react';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import {appColors, typography} from '../global';
+import {scaleWidth} from '../global/dimensions';
+import {useAppSelector} from '../store';
+import {currentSearchSelector} from '../slices';
+import {navigationRef} from '../navigators/navigationRef';
+
+// Pre-auth / onboarding / full-screen routes where the bar must never appear.
+const HIDDEN_ROUTES = [
+  'SplashScreen',
+  'OnboardingScreen',
+  'LoginScreen',
+  'ForgotPassword',
+  'SearchMap',
+  'NearbyMap',
+  'PropertyReport',
+  'Messages',
+  'Chat',
+  'NewChat',
+];
+
+// Active top-level route ('TabNavigator' when the floating tab bar is on screen).
+const getTopRoute = (): string | undefined => {
+  if (!navigationRef.isReady()) {
+    return undefined;
+  }
+  const state = navigationRef.getRootState();
+  return state?.routes?.[state.index]?.name;
+};
 
 const TabLevelSearchIndicator = () => {
-  const {address,percent, searchId} = useAppSelector(currentSearchSelector);
-  if(!searchId) return
+  const insets = useSafeAreaInsets();
+  const {address, percent, status, searchId} = useAppSelector(
+    currentSearchSelector,
+  );
+
+  const [topRoute, setTopRoute] = useState<string | undefined>(getTopRoute);
+  useEffect(() => {
+    const update = () => setTopRoute(getTopRoute());
+    update();
+    const unsub = navigationRef.addListener('state', update);
+    return unsub;
+  }, []);
+
+  // Only show while a search is actively running.
+  if (
+    !searchId ||
+    status !== 'IN_PROGRESS' ||
+    (topRoute && HIDDEN_ROUTES.includes(topRoute))
+  ) {
+    return null;
+  }
+
+  // Sit above the floating tab bar on tab screens; otherwise drop to the bottom.
+  const hasTabBar = topRoute === 'TabNavigator';
+  const barBottom = hasTabBar ? 110 : insets.bottom + scaleWidth(14);
+
   return (
-    <View style={{paddingHorizontal: scaleWidth(25), alignItems:'center'}}>
-
-    <View style={{position:'absolute', bottom: 90 + 20, 
-        backgroundColor: appColors.maroon,
-        borderRadius: scaleWidth(10),
-        paddingHorizontal: scaleWidth(20),
-        paddingVertical: scaleWidth(10),
-        flexDirection:"row",
-        justifyContent:'space-between',
-        width: "100%"
-    }}>
+    <View
+      pointerEvents="box-none"
+      style={{paddingHorizontal: scaleWidth(20), alignItems: 'center'}}>
+      <TouchableOpacity
+        activeOpacity={0.9}
+        onPress={() =>
+          navigationRef.navigate('PropertyReport', {
+            address: address ?? '',
+            when: '',
+            searchId,
+          })
+        }
+        style={{
+          position: 'absolute',
+          bottom: barBottom,
+          backgroundColor: appColors.maroon,
+          borderRadius: scaleWidth(10),
+          paddingHorizontal: scaleWidth(20),
+          paddingVertical: scaleWidth(10),
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          width: '100%',
+        }}>
         <View>
-      <Text style={[typography(600, 12, 'white'), {marginBottom: 5}]}>Search In Progress:</Text>
-      <Text style={typography(700, 14, 'white')}>{address}</Text>
+          <Text style={[typography(600, 12, 'white'), {marginBottom: 5}]}>
+            Search In Progress:
+          </Text>
+          <Text style={typography(700, 14, 'white')}>{address}</Text>
         </View>
-        <View style={{flexDirection:'row', alignItems:'center', gap: 10}}>
-            <Text style={typography(700, 16, 'white')}>{percent}%</Text>
-        <ActivityIndicator/>
-
+        <View style={{flexDirection: 'row', alignItems: 'center', gap: 10}}>
+          <Text style={typography(700, 16, 'white')}>{percent}%</Text>
+          <ActivityIndicator />
         </View>
+      </TouchableOpacity>
     </View>
-    </View>
-  )
-}
+  );
+};
 
-export default TabLevelSearchIndicator
-
-const styles = StyleSheet.create({})
+export default TabLevelSearchIndicator;

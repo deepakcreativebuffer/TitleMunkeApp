@@ -5,6 +5,7 @@ import {navigationRef} from './navigationRef';
 import {DrawerProvider} from '../context/DrawerContext';
 import {SearchManager} from '../components/SearchManager';
 import {LiveActivityManager} from '../components/LiveActivityManager';
+import {AIChatBot} from '../components/AIChatBot';
 import {AuthGate} from '../components/AuthGate';
 import TabLevelSearchIndicator from '../components/TabLevelSearchIndicator';
 import { useFCMListener } from '../hooks/useFCMListener';
@@ -29,6 +30,7 @@ export const RootStackNavigator = () =>{
     <SearchManager />
     <LiveActivityManager />
     <TabLevelSearchIndicator/>
+    <AIChatBot />
     <AuthGate />
   </NavigationContainer>
 )};

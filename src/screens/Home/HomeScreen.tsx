@@ -262,20 +262,13 @@ const BrokerDashboard = () => {
     }
     setError(null);
     try {
-      const res = await dispatch(
-        startSearch({address: address.trim()}),
-      ).unwrap();
-      if (res?.searchId) {
-        rootNav.navigate('PropertyReport', {
-          address: address.trim(),
-          when: '',
-          searchId: res.searchId,
-        });
-      }
+      // Start the search and stay on this screen. The in-progress indicator
+      // shows the live status; we no longer jump to the property detail page.
+      await dispatch(startSearch({address: address.trim()})).unwrap();
     } catch (e) {
       setError(typeof e === 'string' ? e : 'Search failed to start.');
     }
-  }, [address, confirmed, searching, dispatch, rootNav]);
+  }, [address, confirmed, searching, dispatch]);
 
   return (
     <ImageBackground source={gridBg} resizeMode="cover" style={styles.bg}>
@@ -558,6 +551,9 @@ const styles = StyleSheet.create({
     borderRadius: scaleWidth(20),
     padding: scaleWidth(18),
     ...shadow,
+    // Sit above the stat cards below so the address-suggestion dropdown
+    // (which overflows the card) isn't hidden behind them.
+    zIndex: 50,
   },
   addressWrap: {
     position: 'relative',

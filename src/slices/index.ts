@@ -22,3 +22,21 @@ export {
   currentSearchSelector,
   isSearchActiveSelector,
 } from './search.slice';
+
+export {default as messagingSlice} from './messaging.slice';
+export {
+  startConversation,
+  sendMessage,
+  receiveMockReply,
+  setTyping,
+  markConversationRead,
+  randomReply,
+  conversationsSortedSelector,
+  totalUnreadSelector,
+  messagingUsersSelector,
+  currentUserIdSelector,
+  userByIdSelector,
+  conversationByParticipantSelector,
+  messagesByParticipantSelector,
+  typingByParticipantSelector,
+} from './messaging.slice';

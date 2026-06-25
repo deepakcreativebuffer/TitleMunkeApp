@@ -112,3 +112,16 @@ export const isOrgRole = (role?: string): boolean =>
 export const isAgentRole = (role?: string): boolean => role === 'agent';
 
 export const isAdminRole = (role?: string): boolean => role === 'admin';
+
+// Sanitise a backend search status message before showing it to users — hides
+// internal implementation details (e.g. mentions of "OpenAI"). Returns null so
+// the UI simply omits the line for those messages.
+export const cleanSearchMessage = (msg?: string | null): string | null => {
+  if (!msg) {
+    return msg ?? null;
+  }
+  if (/openai/i.test(msg)) {
+    return null;
+  }
+  return msg;
+};

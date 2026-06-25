@@ -127,7 +127,7 @@ export const AddAgentScreen = ({
 
             <Text style={styles.label}>Email Address</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, isEdit && styles.inputDisabled]}
               value={email}
               onChangeText={setEmail}
               placeholder="agent@example.com"
@@ -135,7 +135,8 @@ export const AddAgentScreen = ({
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
-              editable={!saving}
+              // Email is the account identity — can't be changed when editing.
+              editable={!saving && !isEdit}
             />
 
             <Text style={styles.label}>Monthly Search Limit</Text>
@@ -251,6 +252,10 @@ const styles = StyleSheet.create({
     borderRadius: scaleWidth(12),
     paddingHorizontal: scaleWidth(14),
     ...typography('regular', 15, 'coffeeDark'),
+  },
+  inputDisabled: {
+    backgroundColor: 'rgba(0,0,0,0.04)',
+    color: appColors.gray,
   },
   chips: {
     flexDirection: 'row',

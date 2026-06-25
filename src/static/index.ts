@@ -26,3 +26,7 @@ export const GOOGLE_MAPS_API_KEY = 'AIzaSyAqRDjz2kI4-m76Rgb7uCVOtMAVgmZu_eE';
 // LLM governance Lambda (web's VITE_LLM_API_URL) — admin AI-model management.
 export const LLM_API_URL =
   'https://e3lezi6ve5lpsq3blfdxes2unq0rzeis.lambda-url.us-east-1.on.aws/';
+
+// AI chatbot "Munke Assist" Lambda (web's VITE_CHAT_API_URL).
+export const CHAT_API_URL =
+  'https://quhlojc2zcr5ysnwbz2oljrshi0zmmlk.lambda-url.us-east-1.on.aws/';

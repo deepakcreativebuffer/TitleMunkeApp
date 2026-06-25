@@ -100,7 +100,6 @@ export const registerFcmToken = async (): Promise<void> => {
     await fb.messaging.registerDeviceForRemoteMessages();
 
     const token = await fb.getToken(fb.messaging);
-    console.log("TOKNE>>>", token)
     if (!token) {
       return;
     }

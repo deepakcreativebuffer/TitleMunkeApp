@@ -27,6 +27,8 @@ const icFile = require('../assets/images/ic-file.png');
 const icList = require('../assets/images/ic-list.png');
 const icSettings = require('../assets/images/ic-settings.png');
 const icSearch = require('../assets/images/ic-search.png');
+const icPin = require('../assets/images/ic-pin.png');
+const icMessage = require('../assets/images/ic-message.png');
 const icLogout = require('../assets/images/ic-logout.png');
 
 const PANEL_W = Math.min(scaleWidth(300), SCREEN_WIDTH * 0.82);
@@ -37,13 +39,24 @@ type Item = {
   icon: number;
   route?: string; // tab inside TabNavigator
   rootRoute?: string; // top-level stack route
+  badge?: boolean; // show the messaging unread count
+};
+
+const MESSAGES_ITEM: Item = {
+  key: 'Messages',
+  label: 'Messages',
+  icon: icMessage,
+  rootRoute: 'Messages',
+  badge: true,
 };
 
 const ITEMS: Item[] = [
   {key: 'Dashboard', label: 'Dashboard', icon: icHome, route: 'Home'},
+  {key: 'NearbySearch', label: 'Nearby Search', icon: icPin, rootRoute: 'NearbySearch'},
+  MESSAGES_ITEM,
   {key: 'Requests', label: 'Requests', icon: icFile, route: 'Requests'},
   {key: 'Agents', label: 'Agents', icon: icPeople, rootRoute: 'Agents'},
-  {key: 'Logs', label: 'Audit Logs', icon: icList, route: 'Logs'},
+  {key: 'Logs', label: 'Audit Logs', icon: icList, rootRoute: 'Logs'},
   {key: 'Settings', label: 'Settings', icon: icSettings, route: 'Settings'},
 ];
 
@@ -51,9 +64,11 @@ const ITEMS: Item[] = [
 const ORG_ITEMS: Item[] = [
   {key: 'Dashboard', label: 'Dashboard', icon: icHome, route: 'Home'},
   {key: 'Search', label: 'Search', icon: icSearch, rootRoute: 'Search'},
+  {key: 'NearbySearch', label: 'Nearby Search', icon: icPin, rootRoute: 'NearbySearch'},
+  MESSAGES_ITEM,
   {key: 'Requests', label: 'Requests', icon: icFile, route: 'Requests'},
   {key: 'Users', label: 'Users', icon: icPeople, rootRoute: 'OrgUsers'},
-  {key: 'Logs', label: 'Audit Logs', icon: icList, route: 'Logs'},
+  {key: 'Logs', label: 'Audit Logs', icon: icList, rootRoute: 'Logs'},
   {key: 'Settings', label: 'Settings', icon: icSettings, route: 'Settings'},
 ];
 
@@ -61,9 +76,11 @@ const ORG_ITEMS: Item[] = [
 const ADMIN_ITEMS: Item[] = [
   {key: 'Dashboard', label: 'Dashboard', icon: icHome, route: 'Home'},
   {key: 'Search', label: 'Search', icon: icSearch, rootRoute: 'Search'},
+  {key: 'NearbySearch', label: 'Nearby Search', icon: icPin, rootRoute: 'NearbySearch'},
+  MESSAGES_ITEM,
   {key: 'Requests', label: 'Demo Requests', icon: icFile, route: 'Requests'},
   {key: 'Users', label: 'Users', icon: icPeople, rootRoute: 'AdminUsers'},
-  {key: 'Logs', label: 'Audit Logs', icon: icList, route: 'Logs'},
+  {key: 'Logs', label: 'Audit Logs', icon: icList, rootRoute: 'Logs'},
   {key: 'Settings', label: 'Settings', icon: icSettings, route: 'Settings'},
 ];
 
@@ -116,6 +133,11 @@ export const AppDrawer = ({
         : ITEMS;
   const activeKey = routeToKey(
     navigationRef.isReady() ? navigationRef.getCurrentRoute()?.name : undefined,
+  );
+  // Mock messaging unread total for the menu badge (read on open).
+  const unreadTotal = (store.getState().messaging?.conversations ?? []).reduce(
+    (sum: number, c: {unreadCount: number}) => sum + c.unreadCount,
+    0,
   );
 
   useEffect(() => {
@@ -210,6 +232,11 @@ export const AppDrawer = ({
                     style={[styles.itemLabel, active && styles.itemLabelActive]}>
                     {item.label}
                   </Text>
+                  {item.badge && unreadTotal > 0 ? (
+                    <View style={styles.menuBadge}>
+                      <Text style={styles.menuBadgeText}>{unreadTotal}</Text>
+                    </View>
+                  ) : null}
                   {active ? <View style={styles.dot} /> : null}
                 </TouchableOpacity>
               );
@@ -349,6 +376,17 @@ const styles = StyleSheet.create({
     borderRadius: scaleWidth(7),
     backgroundColor: appColors.maroon,
   },
+  menuBadge: {
+    backgroundColor: appColors.maroon,
+    borderRadius: scaleWidth(10),
+    minWidth: scaleWidth(20),
+    height: scaleWidth(20),
+    paddingHorizontal: scaleWidth(6),
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: scaleWidth(8),
+  },
+  menuBadgeText: {...typography(700, 11, 'white'), fontWeight: '700'},
   divider: {
     height: 1,
     backgroundColor: 'rgba(61,32,20,0.08)',

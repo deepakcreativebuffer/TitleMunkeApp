@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { appColors, typography, scaleWidth } from '../../global';
-import { AppStackParamList, HomeScreenProps } from '../../types';
+import { AppStackParamList } from '../../types';
 import { useAppSelector } from '../../store';
 import {
   userProfileSelector,
@@ -89,11 +89,13 @@ const mapHistory = (res: any): HistoryItem[] => {
   });
 };
 
-export const SearchHistoryScreen = ({
-  navigation,
-}: HomeScreenProps<'SearchHistory'>) => {
+// Used both as a Home-stack screen (reached via "View More", has a back button)
+// and as a top-level tab (no back target). Uses the navigation hook so it works
+// in either navigator.
+export const SearchHistoryScreen = () => {
   const insets = useSafeAreaInsets();
   const rootNav = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
+  const navigation = rootNav;
   const profile = useAppSelector(userProfileSelector);
   const liveSearch = useAppSelector(currentSearchSelector);
   const role = useAppSelector(userRoleSelector);
@@ -113,7 +115,6 @@ export const SearchHistoryScreen = ({
   );
   // Re-fetch when an in-flight search changes state (e.g. → SUCCESS).
   const { data, loading } = useFetch(fetcher, [brokerId, liveSearch.status]);
-  console.log('data>>>>>', JSON.stringify(data, null, 2));
   const items = useMemo(() => {
     const mapped = data ? mapHistory(data) : [];
     if (!query.trim()) {
@@ -140,13 +141,18 @@ export const SearchHistoryScreen = ({
       >
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backBtn}
-            activeOpacity={0.8}
-            onPress={() => navigation.goBack()}
-          >
-            <Image source={icChevron} style={styles.backIcon} />
-          </TouchableOpacity>
+          {navigation.canGoBack() ? (
+            <TouchableOpacity
+              style={styles.backBtn}
+              activeOpacity={0.8}
+              onPress={() => navigation.goBack()}
+            >
+              <Image source={icChevron} style={styles.backIcon} />
+            </TouchableOpacity>
+          ) : (
+            // Root tab: no back target — keep a spacer so the title stays centered.
+            <View style={styles.backSpacer} />
+          )}
           <Text style={styles.headerTitle}>Search History</Text>
           <TouchableOpacity
             style={styles.filterBtn}
@@ -265,6 +271,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     ...shadow,
   },
+  backSpacer: {width: scaleWidth(44), height: scaleWidth(44)},
   backIcon: {
     width: scaleWidth(18),
     height: scaleWidth(18),

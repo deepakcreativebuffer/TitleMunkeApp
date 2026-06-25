@@ -6,9 +6,17 @@ import {appColors, typography, scaleWidth} from '../global';
 
 const ICONS: Record<string, number> = {
   Home: require('../assets/images/ic-home.png'),
+  SearchHistory: require('../assets/images/ic-clock.png'),
   Requests: require('../assets/images/ic-file.png'),
-  Logs: require('../assets/images/ic-list.png'),
   Settings: require('../assets/images/ic-settings.png'),
+};
+
+// Friendly labels (route names can't carry a space).
+const LABELS: Record<string, string> = {
+  Home: 'Home',
+  SearchHistory: 'Search History',
+  Requests: 'Requests',
+  Settings: 'Settings',
 };
 
 export const TabBar = ({state, navigation}: BottomTabBarProps) => {
@@ -46,7 +54,9 @@ export const TabBar = ({state, navigation}: BottomTabBarProps) => {
                 {tintColor: focused ? appColors.maroon : appColors.coffeeLight},
               ]}
             />
-            {focused ? <Text style={styles.label}>{route.name}</Text> : null}
+            {focused ? (
+              <Text style={styles.label}>{LABELS[route.name] ?? route.name}</Text>
+            ) : null}
           </TouchableOpacity>
         );
       })}

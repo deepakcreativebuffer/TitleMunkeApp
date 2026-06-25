@@ -8,6 +8,7 @@ import {
 import {lookupAddress} from '../api/algolia';
 import {ADDRESS_LOOKUP_API_URL} from '../static';
 import {logoutThunk} from '../thunks/auth.thunks';
+import {cleanSearchMessage} from '../utils';
 
 export type SearchStatus =
   | 'idle'
@@ -25,7 +26,18 @@ interface SearchState {
   message: string | null;
   downloadLink: string | null;
   startedAt: number | null;
+  // Consecutive status-poll failures (the backend 400s once its deadline passes
+  // — e.g. a job that dies at 90%). Used to finalize a stuck search.
+  failCount: number;
 }
+
+const KNOWN_STATUSES: SearchStatus[] = [
+  'idle',
+  'IN_PROGRESS',
+  'SUCCESS',
+  'FAILED',
+  'STOPPED',
+];
 
 const initialState: SearchState = {
   searchId: null,
@@ -36,6 +48,7 @@ const initialState: SearchState = {
   message: null,
   downloadLink: null,
   startedAt: null,
+  failCount: 0,
 };
 
 const pickSearchId = (res: any): string | null =>
@@ -134,6 +147,7 @@ const searchSlice = createSlice({
           'Initializing title search... This process may take a few minutes.';
         state.downloadLink = null;
         state.searchId = null;
+        state.failCount = 0;
       })
       .addCase(startSearch.fulfilled, (state, action) => {
         if (action.payload) {
@@ -151,12 +165,35 @@ const searchSlice = createSlice({
       })
       .addCase(pollSearch.fulfilled, (state, action) => {
         const d = action.payload || {};
-        const status: SearchStatus = d.status ?? state.status;
+        state.failCount = 0;
+        // Backend may return non-enum statuses (e.g. "ERROR" when a job dies
+        // after its deadline). Treat anything unrecognised as a failure so the
+        // search finalizes instead of lingering at the last percent (e.g. 90%).
+        let status: SearchStatus = d.status ?? state.status;
+        if (typeof d.status === 'string' && !KNOWN_STATUSES.includes(d.status)) {
+          status = 'FAILED';
+        }
         state.status = status;
         state.percent = d.percent_completion ?? state.percent;
-        state.message = d.status_message ?? state.message;
+        state.message =
+          d.status_message != null
+            ? cleanSearchMessage(d.status_message)
+            : state.message;
+        if (status === 'FAILED' && !state.message) {
+          state.message = 'Search could not be completed. Please try again.';
+        }
         if (d.zip_url || d.downloadLink) {
           state.downloadLink = d.zip_url ?? d.downloadLink;
+        }
+      })
+      // The status endpoint 400s once the backend deadline passes (job died,
+      // e.g. stuck at 90%). Tolerate transient blips, but finalize the search
+      // after a few consecutive failures so it doesn't poll/show forever.
+      .addCase(pollSearch.rejected, state => {
+        state.failCount = (state.failCount ?? 0) + 1;
+        if (state.failCount >= 3 && state.status === 'IN_PROGRESS') {
+          state.status = 'FAILED';
+          state.message = 'Search could not be completed. Please try again.';
         }
       })
       // Wipe any in-flight/persisted search when the user logs out.

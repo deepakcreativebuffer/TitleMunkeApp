@@ -20,7 +20,11 @@ import {userProfileSelector} from '../../slices';
 import {useFetch} from '../../hooks';
 import {ConfirmModal} from '../../components/ConfirmModal';
 import {AppStackParamList} from '../../types';
-import {getBrokerAgentDetails, userBulkDelete} from '../../api/userAdmin.api';
+import {
+  getBrokerAgentDetails,
+  userBulkDelete,
+  reinviteUser,
+} from '../../api/userAdmin.api';
 
 const gridBg = require('../../assets/images/grid-bg.png');
 const icMenu = require('../../assets/images/ic-menu.png');
@@ -187,6 +191,26 @@ export const AgentsScreen = () => {
       setDeleting(false);
     }
   }, [pendingDelete, reload]);
+
+  // Reinvite (unconfirmed agents only) with a confirmation modal.
+  const [pendingReinvite, setPendingReinvite] = useState<Agent | null>(null);
+  const [reinviting, setReinviting] = useState(false);
+
+  const confirmReinvite = useCallback(async () => {
+    if (!pendingReinvite?.email) {
+      setPendingReinvite(null);
+      return;
+    }
+    setReinviting(true);
+    try {
+      await reinviteUser({email: pendingReinvite.email});
+      setPendingReinvite(null);
+    } catch {
+      // keep modal open on failure
+    } finally {
+      setReinviting(false);
+    }
+  }, [pendingReinvite]);
 
   return (
     <ImageBackground source={gridBg} resizeMode="cover" style={styles.bg}>
@@ -363,10 +387,18 @@ export const AgentsScreen = () => {
                 </View>
 
                 <View style={styles.cardActions}>
-                  <TouchableOpacity style={styles.reinviteBtn} activeOpacity={0.8}>
-                    <Image source={icMail} style={styles.reinviteIcon} />
-                    <Text style={styles.reinviteText}>Reinvite</Text>
-                  </TouchableOpacity>
+                  {a.status === 'UNCONFIRMED' ? (
+                    <TouchableOpacity
+                      style={styles.reinviteBtn}
+                      activeOpacity={0.8}
+                      onPress={() => setPendingReinvite(a)}>
+                      <Image source={icMail} style={styles.reinviteIcon} />
+                      <Text style={styles.reinviteText}>Reinvite</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    // Keep the action icons right-aligned when there's no Reinvite.
+                    <View />
+                  )}
                   <View style={styles.actionIcons}>
                     <TouchableOpacity
                       style={styles.actionIconBtn}
@@ -418,6 +450,18 @@ export const AgentsScreen = () => {
         loading={deleting}
         onConfirm={confirmDelete}
         onCancel={() => (deleting ? null : setPendingDelete(null))}
+      />
+
+      <ConfirmModal
+        visible={!!pendingReinvite}
+        title="Reinvite Agent"
+        message={`Send a reinvitation email to ${
+          pendingReinvite?.name || 'this agent'
+        }?`}
+        confirmLabel="Reinvite"
+        loading={reinviting}
+        onConfirm={confirmReinvite}
+        onCancel={() => (reinviting ? null : setPendingReinvite(null))}
       />
     </ImageBackground>
   );
