@@ -1,4 +1,4 @@
-import React, {useState, useCallback, useMemo, useRef} from 'react';
+import React, {useState, useCallback, useMemo, useRef, useEffect} from 'react';
 import {
   View,
   Text,
@@ -40,6 +40,7 @@ import {
   algoliaEnabled,
   AddressHit,
 } from '../../api/algolia';
+import { LiveActivity } from '../../native/LiveActivity';
 
 const gridBg = require('../../assets/images/grid-bg.png');
 const icMenu = require('../../assets/images/ic-menu.png');
@@ -93,6 +94,24 @@ const mapRecent = (res: any): Recent[] => {
 // broker/agent search dashboard.
 export const HomeScreen = () => {
   const role = useAppSelector(userRoleSelector);
+
+  // async function testWidget(){
+
+  //   LiveActivity.start({
+  //     address:'Nagaland',
+  //     etaMinutes: 20,
+  //     message:"Search Loading",
+  //     percent: 20,
+  //     searchId:'39u302u2',
+  //     stageLabel:'Helo',
+  //     status:'In Progress'
+  //   })
+  // }
+
+  // useEffect(() => {
+  // testWidget()
+  // },[])
+
   if (isAdminRole(role)) {
     return <AdminDashboard />;
   }

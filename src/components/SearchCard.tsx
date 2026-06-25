@@ -86,11 +86,9 @@ export const SearchCard = () => {
     try {
       const res = await dispatch(startSearch({address: address.trim()})).unwrap();
       if (res?.searchId) {
-        nav.navigate('PropertyReport', {
-          address: address.trim(),
-          when: '',
-          searchId: res.searchId,
-        });
+        // Open the live tracker (progress bar + stage timeline). The search
+        // keeps running server-side; the report is reachable from there.
+        nav.navigate('SearchProgress');
       }
     } catch (e) {
       setError(typeof e === 'string' ? e : 'Search failed to start.');
@@ -159,14 +157,7 @@ export const SearchCard = () => {
           activeOpacity={0.9}
           style={styles.progressBlock}
           disabled={!search.searchId}
-          onPress={() =>
-            search.searchId &&
-            nav.navigate('PropertyReport', {
-              address: search.address ?? '',
-              when: '',
-              searchId: search.searchId,
-            })
-          }>
+          onPress={() => search.searchId && nav.navigate('SearchProgress')}>
           <Text style={styles.progressPercent}>
             Search in progress {search.percent ?? 0}%
           </Text>

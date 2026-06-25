@@ -5,6 +5,11 @@ export {ForgotPasswordScreen} from './Login/ForgotPasswordScreen';
 export {HomeScreen} from './Home/HomeScreen';
 export {SearchHistoryScreen} from './SearchHistory/SearchHistoryScreen';
 export {PropertyReportScreen} from './PropertyReport/PropertyReportScreen';
+export {SearchProgressScreen} from './SearchProgress/SearchProgressScreen';
+// NOTE: SearchMapScreen is intentionally NOT re-exported here. It pulls in
+// react-native-maps, whose native module would otherwise load at app startup
+// and crash the whole app on a binary that wasn't rebuilt with the pod. It is
+// lazy-loaded in AppNavigator so it only loads when the map route is opened.
 export {AgentsScreen} from './Agents/AgentsScreen';
 export {AddAgentScreen} from './Agents/AddAgentScreen';
 export {AgentDetailsScreen} from './Agents/AgentDetailsScreen';

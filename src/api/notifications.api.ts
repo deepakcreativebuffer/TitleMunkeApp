@@ -19,3 +19,14 @@ export const removeFcmTokenOfUser = (body: {
   fcm_token: string;
   timezone: string;
 }) => post('/remove-fcm-token-of-user', body);
+
+/* ----------------------------- Live Activity ----------------------------- */
+
+// Register the per-activity APNs push token for a search's iOS Live Activity so
+// the backend can push live progress to the lock screen / Dynamic Island.
+// NOTE: backend must implement this endpoint + send ActivityKit pushes to APNs.
+export const addLiveActivityToken = (body: {
+  search_id: string;
+  push_token: string;
+  activity_id: string;
+}) => post('/add-live-activity-token', body);

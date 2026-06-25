@@ -1,12 +1,26 @@
-import React from 'react';
+import React, {Suspense} from 'react';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import * as Screens from '../screens';
-import {AppStackParamList} from '../types';
+import {AppStackParamList, AppScreenProps} from '../types';
 import TabNavigator from './TabNavigator';
 
 const Stack = createNativeStackNavigator<AppStackParamList>();
 
+// Lazy-load the map screen so react-native-maps (a native module) is only
+// required when the user opens the map — never at app startup.
+const LazySearchMap = React.lazy(() =>
+  import('../screens/SearchMap/SearchMapScreen').then(m => ({
+    default: m.SearchMapScreen,
+  })),
+);
+const SearchMapScreen = (props: AppScreenProps<'SearchMap'>) => (
+  <Suspense fallback={null}>
+    <LazySearchMap {...props} />
+  </Suspense>
+);
+
 export const AppNavigator = () => (
+
   <Stack.Navigator
     screenOptions={{headerShown: false, animation: 'ios_from_right'}}
     initialRouteName="SplashScreen">
@@ -25,6 +39,11 @@ export const AppNavigator = () => (
       name="PropertyReport"
       component={Screens.PropertyReportScreen}
     />
+    <Stack.Screen
+      name="SearchProgress"
+      component={Screens.SearchProgressScreen}
+    />
+    <Stack.Screen name="SearchMap" component={SearchMapScreen} />
     <Stack.Screen name="Agents" component={Screens.AgentsScreen} />
     <Stack.Screen name="AddAgent" component={Screens.AddAgentScreen} />
     <Stack.Screen

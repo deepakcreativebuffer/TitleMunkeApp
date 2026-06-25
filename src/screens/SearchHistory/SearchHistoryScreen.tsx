@@ -25,10 +25,11 @@ import {
 import { useFetch } from '../../hooks';
 import { searchStatusMeta } from '../../utils';
 import { listSearchHistories } from '../../api/userAdmin.api';
+import { extractLatLng } from '../../api/geocode';
 
 const gridBg = require('../../assets/images/grid-bg.png');
 const icChevron = require('../../assets/images/ic-chevron.png');
-const icFilter = require('../../assets/images/ic-filter.png');
+const icPin = require('../../assets/images/ic-pin.png');
 const icSearch = require('../../assets/images/ic-search.png');
 const icClock = require('../../assets/images/ic-clock.png');
 const icEye = require('../../assets/images/ic-eye.png');
@@ -40,6 +41,8 @@ type HistoryItem = {
   when: string;
   status: string;
   searchId?: string;
+  latitude?: number;
+  longitude?: number;
 };
 
 const formatWhen = (raw?: string | number): string => {
@@ -70,15 +73,20 @@ const mapHistory = (res: any): HistoryItem[] => {
     res?.items ??
     res?.data?.items ??
     (Array.isArray(res) ? res : []);
-  return items.map((it, i) => ({
-    id: String(it.id ?? it.search_id ?? i),
-    address: it.address ?? it.searchAddress ?? '—',
-    when: formatWhen(
-      it.created_at ?? it.createdAt ?? it.property_summary?.['Date of Search'],
-    ),
-    status: String(it.status ?? 'SUCCESS'),
-    searchId: it.search_id ?? it.searchId ?? it.id,
-  }));
+  return items.map((it, i) => {
+    const coord = extractLatLng(it);
+    return {
+      id: String(it.id ?? it.search_id ?? i),
+      address: it.address ?? it.searchAddress ?? '—',
+      when: formatWhen(
+        it.created_at ?? it.createdAt ?? it.property_summary?.['Date of Search'],
+      ),
+      status: String(it.status ?? 'SUCCESS'),
+      searchId: it.search_id ?? it.searchId ?? it.id,
+      latitude: coord?.latitude,
+      longitude: coord?.longitude,
+    };
+  });
 };
 
 export const SearchHistoryScreen = ({
@@ -140,8 +148,12 @@ export const SearchHistoryScreen = ({
             <Image source={icChevron} style={styles.backIcon} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Search History</Text>
-          <TouchableOpacity style={styles.filterBtn} activeOpacity={0.8}>
-            <Image source={icFilter} style={styles.filterIcon} />
+          <TouchableOpacity
+            style={styles.filterBtn}
+            activeOpacity={0.8}
+            disabled={items.length === 0}
+            onPress={() => rootNav.navigate('SearchMap', {items})}>
+            <Image source={icPin} style={styles.filterIcon} />
           </TouchableOpacity>
         </View>
 

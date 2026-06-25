@@ -7,6 +7,18 @@ export type AppStackParamList = {
   ForgotPassword: undefined;
   TabNavigator: undefined;
   PropertyReport: {address: string; when: string; searchId?: string};
+  SearchProgress: undefined;
+  SearchMap: {
+    items: Array<{
+      id: string;
+      address: string;
+      when: string;
+      status: string;
+      searchId?: string;
+      latitude?: number;
+      longitude?: number;
+    }>;
+  };
   Agents: undefined;
   AddAgent: {agent?: AgentFormParam} | undefined;
   EditProfile: undefined;
