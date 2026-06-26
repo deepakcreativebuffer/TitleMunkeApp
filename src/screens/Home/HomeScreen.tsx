@@ -150,10 +150,32 @@ const BrokerDashboard = () => {
     // re-fetch when a search completes
     search.status,
   ]);
-  const recents = useMemo(
-    () => (recentData ? mapRecent(recentData) : []),
-    [recentData],
-  );
+  const recents = useMemo(() => {
+    const list = recentData ? mapRecent(recentData) : [];
+    // Surface the live search immediately (before the backend list includes
+    // it): show it on top as In Progress, then its status updates live. Skip if
+    // the fetched list already has it (deduped by searchId).
+    if (
+      search.searchId &&
+      search.status !== 'idle' &&
+      !list.some(r => r.searchId === search.searchId)
+    ) {
+      list.unshift({
+        id: `live-${search.searchId}`,
+        address: search.address ?? '—',
+        when: fmtWhen(search.startedAt ?? Date.now()),
+        status: search.status,
+        searchId: search.searchId,
+      });
+    }
+    return list.slice(0, 5);
+  }, [
+    recentData,
+    search.searchId,
+    search.status,
+    search.address,
+    search.startedAt,
+  ]);
 
   // Broker KPIs — derived from the agents list (same as the web dashboard).
   const agentsFetcher = useCallback(

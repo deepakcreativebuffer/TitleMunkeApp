@@ -81,10 +81,31 @@ export const SearchScreen = () => {
     userId,
     search.status,
   ]);
-  const recents = useMemo(
-    () => (recentData ? mapRecent(recentData) : []),
-    [recentData],
-  );
+  const recents = useMemo(() => {
+    const list = recentData ? mapRecent(recentData) : [];
+    // Show the live search immediately (In Progress) before the backend list
+    // includes it; status then updates live. Deduped by searchId.
+    if (
+      search.searchId &&
+      search.status !== 'idle' &&
+      !list.some(r => r.searchId === search.searchId)
+    ) {
+      list.unshift({
+        id: `live-${search.searchId}`,
+        address: search.address ?? '—',
+        when: fmtWhen(search.startedAt ?? Date.now()),
+        status: search.status,
+        searchId: search.searchId,
+      });
+    }
+    return list.slice(0, 5);
+  }, [
+    recentData,
+    search.searchId,
+    search.status,
+    search.address,
+    search.startedAt,
+  ]);
 
   return (
     <ImageBackground source={gridBg} resizeMode="cover" style={styles.bg}>

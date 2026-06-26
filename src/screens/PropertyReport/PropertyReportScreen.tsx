@@ -135,7 +135,14 @@ export const PropertyReportScreen = ({
         | string
         | undefined,
       csvLink: (d?.csv_url ?? d?.csvUrl ?? d?.csv) as string | undefined,
-      documents: Array.isArray(d?.documents) ? d.documents : [],
+      // Show only PDF documents — hide the ocr_results_*.txt files.
+      documents: (Array.isArray(d?.documents) ? d.documents : []).filter(
+        (doc: any) => {
+          const name = String(doc?.name ?? doc?.title ?? '').toLowerCase();
+          const type = String(doc?.type ?? '').toLowerCase();
+          return type === 'pdf' || name.endsWith('.pdf');
+        },
+      ),
     };
   }, [d, liveStatus, search.percent, route.params, searchId]);
 

@@ -54,8 +54,13 @@ const TabLevelSearchIndicator = () => {
   }
 
   // Sit above the floating tab bar on tab screens; otherwise drop to the bottom.
+  // Use the SAME base the tab bar uses (max(insets, 12)) so the gap to the
+  // chatbot is identical on every device (Pro vs non-Pro safe areas).
   const hasTabBar = topRoute === 'TabNavigator';
-  const barBottom = hasTabBar ? 110 : insets.bottom + scaleWidth(14);
+  const tabBase = Math.max(insets.bottom, scaleWidth(12));
+  const barBottom = hasTabBar
+    ? tabBase + scaleWidth(74)
+    : insets.bottom + scaleWidth(14);
 
   return (
     <View

@@ -92,13 +92,18 @@ export const AIChatBot = () => {
   // else above the floating tab bar on tab screens; else near the bottom edge
   // (stack screens like Nearby Search have no tab bar).
   const hasTabBar = topRoute === 'TabNavigator';
-  // Lift above the in-progress bar when it's showing; the bar itself sits higher
-  // on tab screens (above the tab bar) and at the bottom on stack screens.
-  const fabBottom =
-    insets.bottom +
-    scaleWidth(
-      searchBarVisible ? (hasTabBar ? 129 : 78) : hasTabBar ? 74 : 24,
-    );
+  // Use the same base the tab bar uses (max(insets, 12)) so the gap above the
+  // tab bar / search bar is identical on every device (Pro vs non-Pro).
+  const tabBase = Math.max(insets.bottom, scaleWidth(12));
+  // Lift above the in-progress bar when it's showing; the bar sits at
+  // tabBase + 74 on tab screens / insets + 14 on stack screens, and is ~60 tall.
+  const fabBottom = searchBarVisible
+    ? hasTabBar
+      ? tabBase + scaleWidth(138)
+      : insets.bottom + scaleWidth(78)
+    : hasTabBar
+    ? tabBase + scaleWidth(74)
+    : insets.bottom + scaleWidth(24);
 
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');

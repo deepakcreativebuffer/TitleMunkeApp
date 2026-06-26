@@ -1,4 +1,4 @@
-import React, {useCallback, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {
   View,
   Text,
@@ -7,7 +7,7 @@ import {
   TextInput,
   TouchableOpacity,
 } from 'react-native';
-import {useNavigation} from '@react-navigation/native';
+import {useFocusEffect, useNavigation} from '@react-navigation/native';
 import {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {appColors, typography, scaleWidth} from '../global';
 import {AppStackParamList} from '../types';
@@ -47,6 +47,37 @@ export const SearchCard = () => {
   const [suggestions, setSuggestions] = useState<AddressHit[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Reset the address input + confirm checkbox so the card is ready for the
+  // next search. Called both when a running search finishes (live transition)
+  // and when the user returns to this screen after a finished search.
+  const resetForm = useCallback(() => {
+    setAddress('');
+    setConfirmed(false);
+    setSuggestions([]);
+    setShowSuggestions(false);
+    setError(null);
+  }, []);
+
+  // 1) Live case: the search finishes while this card is mounted/visible.
+  const prevStatusRef = useRef(search.status);
+  useEffect(() => {
+    const prev = prevStatusRef.current;
+    prevStatusRef.current = search.status;
+    if (prev === 'IN_PROGRESS' && search.status !== 'IN_PROGRESS') {
+      resetForm();
+    }
+  }, [search.status, resetForm]);
+
+  // 2) Navigation case: the search finished on another screen (e.g. the live
+  // tracker). When the user comes back here and nothing is running, clear it.
+  useFocusEffect(
+    useCallback(() => {
+      if (search.status !== 'IN_PROGRESS' && search.status !== 'idle') {
+        resetForm();
+      }
+    }, [search.status, resetForm]),
+  );
 
   const onChangeAddress = useCallback((t: string) => {
     setAddress(t);

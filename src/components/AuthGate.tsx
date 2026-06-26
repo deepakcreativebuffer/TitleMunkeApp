@@ -14,9 +14,16 @@ export const AuthGate = () => {
 
   useEffect(() => {
     if (prev.current && !isAuth && navigationRef.isReady()) {
-      navigationRef.dispatch(
-        CommonActions.reset({index: 0, routes: [{name: 'LoginScreen'}]}),
-      );
+      // Skip if an explicit logout already routed us to Login — otherwise the
+      // delayed session-reset fires a second, redundant navigation (a new Login
+      // screen sliding in). This guard only catches *unexpected* session loss
+      // (e.g. an expired refresh token) where we're still inside the app.
+      const current = navigationRef.getCurrentRoute()?.name;
+      if (current !== 'LoginScreen') {
+        navigationRef.dispatch(
+          CommonActions.reset({index: 0, routes: [{name: 'LoginScreen'}]}),
+        );
+      }
     }
     prev.current = isAuth;
   }, [isAuth]);

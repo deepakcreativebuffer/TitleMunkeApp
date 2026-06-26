@@ -11,6 +11,8 @@ import {
   StatusBar,
   ActivityIndicator,
   Modal,
+  Keyboard,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {appColors, typography, scaleWidth} from '../../global';
@@ -247,12 +249,21 @@ export const AdvancedSettingsScreen = ({
         animationType="fade"
         onRequestClose={() => setJoinOpen(false)}>
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
+          {/* Tap outside the card → dismiss the keyboard (modal closes via ✕). */}
+          <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+            <View style={StyleSheet.absoluteFill} />
+          </TouchableWithoutFeedback>
+          {/* Tapping anywhere on the card (outside inputs/buttons) also dismisses it. */}
+          <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+            <View style={styles.modalCard}>
             <View style={styles.modalHead}>
               <Text style={styles.modalTitle}>Join {entityLabel}</Text>
               <TouchableOpacity
                 hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}
-                onPress={() => setJoinOpen(false)}>
+                onPress={() => {
+                  Keyboard.dismiss();
+                  setJoinOpen(false);
+                }}>
                 <Text style={styles.modalClose}>✕</Text>
               </TouchableOpacity>
             </View>
@@ -403,7 +414,8 @@ export const AdvancedSettingsScreen = ({
                 )}
               </TouchableOpacity>
             </View>
-          </View>
+            </View>
+          </TouchableWithoutFeedback>
         </View>
       </Modal>
     </ImageBackground>
