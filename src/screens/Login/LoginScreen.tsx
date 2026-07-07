@@ -1,4 +1,4 @@
-import React, {useState, useEffect} from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,15 +13,16 @@ import {
   Platform,
   ActivityIndicator,
 } from 'react-native';
-import {useSafeAreaInsets} from 'react-native-safe-area-context';
-import {useForm, Controller} from 'react-hook-form';
-import {zodResolver} from '@hookform/resolvers/zod';
-import {appColors, typography, scaleWidth} from '../../global';
-import {AppScreenProps} from '../../types';
-import {loginSchema, LoginSchemaType} from '../../schemas';
-import {useAppDispatch, useAppSelector} from '../../store';
-import {loginThunk} from '../../thunks';
-import {registerFcmToken} from '../../services/fcm';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useForm, Controller } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { appColors, typography, scaleWidth } from '../../global';
+import { AppScreenProps } from '../../types';
+import { loginSchema, LoginSchemaType } from '../../schemas';
+import { useAppDispatch, useAppSelector } from '../../store';
+import { loginThunk } from '../../thunks';
+import { registerFcmToken } from '../../services/fcm';
+import { connectMessagingSocket } from '../../services/messaging.ws';
 import {
   authStatusSelector,
   authErrorSelector,
@@ -42,7 +43,7 @@ const FEATURES = [
   'Usage-based search',
 ];
 
-export const LoginScreen = ({navigation}: AppScreenProps<'LoginScreen'>) => {
+export const LoginScreen = ({ navigation }: AppScreenProps<'LoginScreen'>) => {
   const insets = useSafeAreaInsets();
   const dispatch = useAppDispatch();
   const status = useAppSelector(authStatusSelector);
@@ -50,12 +51,12 @@ export const LoginScreen = ({navigation}: AppScreenProps<'LoginScreen'>) => {
   const loading = status === 'loading';
   const [secure, setSecure] = useState(true);
 
-  const {control, handleSubmit, formState} = useForm<LoginSchemaType>({
+  const { control, handleSubmit, formState } = useForm<LoginSchemaType>({
     resolver: zodResolver(loginSchema),
-    defaultValues: {email: '', password: ''},
+    defaultValues: { email: '', password: '' },
     mode: 'onTouched',
   });
-  const {errors} = formState;
+  const { errors } = formState;
 
   // Clear any stale API error when leaving the screen.
   useEffect(() => () => void dispatch(clearAuthError()), [dispatch]);
@@ -66,7 +67,9 @@ export const LoginScreen = ({navigation}: AppScreenProps<'LoginScreen'>) => {
       // Register this device with the backend so it can push notifications.
       // Fire-and-forget: it must not delay or block entering the app.
       void registerFcmToken();
-      navigation.reset({index: 0, routes: [{name: 'TabNavigator'}]});
+      // Open the realtime messaging socket now that we have a valid token.
+      connectMessagingSocket();
+      navigation.reset({ index: 0, routes: [{ name: 'TabNavigator' }] });
     } catch {
       // Rejection message is surfaced via the `apiError` selector.
     }
@@ -81,18 +84,24 @@ export const LoginScreen = ({navigation}: AppScreenProps<'LoginScreen'>) => {
       />
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
         <ScrollView
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={[
             styles.scroll,
-            {paddingTop: insets.top + scaleWidth(24)},
-            {paddingBottom: insets.bottom + scaleWidth(20)},
-          ]}>
+            { paddingTop: insets.top + scaleWidth(24) },
+            { paddingBottom: insets.bottom + scaleWidth(20) },
+          ]}
+        >
           {/* Brand */}
           <View style={styles.brand}>
-            <Image source={logo} style={styles.brandLogo} resizeMode="contain" />
+            <Image
+              source={logo}
+              style={styles.brandLogo}
+              resizeMode="contain"
+            />
           </View>
 
           {/* Card */}
@@ -107,9 +116,8 @@ export const LoginScreen = ({navigation}: AppScreenProps<'LoginScreen'>) => {
             <Controller
               control={control}
               name="email"
-              render={({field: {value, onChange, onBlur}}) => (
-                <View
-                  style={[styles.input, errors.email && styles.inputError]}>
+              render={({ field: { value, onChange, onBlur } }) => (
+                <View style={[styles.input, errors.email && styles.inputError]}>
                   <Image source={icMail} style={styles.inputIcon} />
                   <TextInput
                     style={styles.inputText}
@@ -140,9 +148,10 @@ export const LoginScreen = ({navigation}: AppScreenProps<'LoginScreen'>) => {
             <Controller
               control={control}
               name="password"
-              render={({field: {value, onChange, onBlur}}) => (
+              render={({ field: { value, onChange, onBlur } }) => (
                 <View
-                  style={[styles.input, errors.password && styles.inputError]}>
+                  style={[styles.input, errors.password && styles.inputError]}
+                >
                   <Image source={icLock} style={styles.inputIcon} />
                   <TextInput
                     style={styles.inputText}
@@ -162,8 +171,9 @@ export const LoginScreen = ({navigation}: AppScreenProps<'LoginScreen'>) => {
                     placeholderTextColor={appColors.gray}
                   />
                   <TouchableOpacity
-                    hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}
-                    onPress={() => setSecure(s => !s)}>
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    onPress={() => setSecure(s => !s)}
+                  >
                     <Image source={icEye} style={styles.eyeIcon} />
                   </TouchableOpacity>
                 </View>
@@ -175,7 +185,8 @@ export const LoginScreen = ({navigation}: AppScreenProps<'LoginScreen'>) => {
 
             <TouchableOpacity
               style={styles.forgotWrap}
-              onPress={() => navigation.navigate('ForgotPassword')}>
+              onPress={() => navigation.navigate('ForgotPassword')}
+            >
               <Text style={styles.forgot}>Forgot Password?</Text>
             </TouchableOpacity>
 
@@ -189,7 +200,8 @@ export const LoginScreen = ({navigation}: AppScreenProps<'LoginScreen'>) => {
               activeOpacity={0.9}
               style={[styles.loginBtn, loading && styles.loginBtnDisabled]}
               disabled={loading}
-              onPress={handleSubmit(onSubmit)}>
+              onPress={handleSubmit(onSubmit)}
+            >
               {loading ? (
                 <ActivityIndicator color={appColors.white} />
               ) : (
@@ -199,13 +211,6 @@ export const LoginScreen = ({navigation}: AppScreenProps<'LoginScreen'>) => {
                 </>
               )}
             </TouchableOpacity>
-
-            <View style={styles.registerRow}>
-              <Text style={styles.registerMuted}>Don't have an account? </Text>
-              <TouchableOpacity>
-                <Text style={styles.registerLink}>Register Now</Text>
-              </TouchableOpacity>
-            </View>
           </View>
 
           {/* Feature pills */}
@@ -225,15 +230,15 @@ export const LoginScreen = ({navigation}: AppScreenProps<'LoginScreen'>) => {
 
 const cardShadow = {
   shadowColor: '#3d2014',
-  shadowOffset: {width: 0, height: 10},
+  shadowOffset: { width: 0, height: 10 },
   shadowOpacity: 0.1,
   shadowRadius: 20,
   elevation: 4,
 };
 
 const styles = StyleSheet.create({
-  flex: {flex: 1},
-  bg: {flex: 1, backgroundColor: appColors.background},
+  flex: { flex: 1 },
+  bg: { flex: 1, backgroundColor: appColors.background },
   scroll: {
     flexGrow: 1,
     paddingHorizontal: scaleWidth(22),
