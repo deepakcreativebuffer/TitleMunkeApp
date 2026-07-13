@@ -66,7 +66,7 @@ const mapAgents = (res: any): Agent[] => {
     searchLimit: String(a.searchLimit ?? '10'),
     searches: Number(a.totalSearches ?? a.searchCount ?? a.searchesThisMonth ?? 0),
     lastLogin: a.lastLogin
-      ? new Date(a.lastLogin).toLocaleString(undefined, {
+      ? new Date(a.lastLogin).toLocaleString('en-US', {
           month: 'short',
           day: '2-digit',
           hour: '2-digit',

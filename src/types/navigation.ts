@@ -48,6 +48,7 @@ export type AppStackParamList = {
     fileKey?: string;
     isImage?: boolean;
   };
+  WebPage: {url: string; title: string};
   Agents: undefined;
   AddAgent: {agent?: AgentFormParam} | undefined;
   EditProfile: undefined;

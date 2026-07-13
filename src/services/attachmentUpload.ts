@@ -23,6 +23,19 @@ import type {AttachmentInput, PickedFile} from '../types';
 export const PICKER_UNAVAILABLE = 'PICKER_UNAVAILABLE';
 // Thrown when the user denied a camera / photos permission.
 export const PERMISSION_DENIED = 'PERMISSION_DENIED';
+// Thrown when the user picks a disallowed archive (zip/rar/…) file.
+export const BLOCKED_FILE_TYPE = 'BLOCKED_FILE_TYPE';
+
+// Archive/compressed files are not allowed in chat.
+const ARCHIVE_EXTS = ['zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'xz'];
+const ARCHIVE_MIME_RE = /(zip|rar|7z|tar|gzip|compressed|x-bzip|x-xz)/i;
+export const isArchiveFile = (name?: string, type?: string): boolean => {
+  const ext = name?.split('.').pop()?.toLowerCase();
+  if (ext && ARCHIVE_EXTS.includes(ext)) {
+    return true;
+  }
+  return !!type && ARCHIVE_MIME_RE.test(type);
+};
 
 // Request a single Android runtime permission (no-op / granted on iOS, where
 // the native modules prompt automatically via the Info.plist usage strings).
@@ -154,13 +167,21 @@ export const pickFiles = async (): Promise<PickedFile[]> => {
 
   try {
     const results = await pick({allowMultiSelection: true, type: allowed});
-    return (results as any[]).map(r => ({
+    const files: PickedFile[] = (results as any[]).map(r => ({
       uri: r.uri as string,
       name: (r.name as string) ?? 'file',
       type: guessType((r.name as string) ?? '', r.type),
       size: typeof r.size === 'number' ? r.size : 0,
     }));
+    // Reject archives (zip/rar/…) — not allowed in chat.
+    if (files.some(f => isArchiveFile(f.name, f.type))) {
+      throw new Error(BLOCKED_FILE_TYPE);
+    }
+    return files;
   } catch (e: any) {
+    if (e instanceof Error && e.message === BLOCKED_FILE_TYPE) {
+      throw e;
+    }
     if (isErrorWithCode?.(e) && e?.code === errorCodes?.OPERATION_CANCELED) {
       return [];
     }

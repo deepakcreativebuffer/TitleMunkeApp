@@ -1,13 +1,5 @@
-import React, {useEffect, useState} from 'react';
-import {
-  View,
-  Image,
-  ActivityIndicator,
-  StyleSheet,
-  ImageStyle,
-  StyleProp,
-} from 'react-native';
-import {appColors} from '../global';
+import React, {useEffect, useRef, useState} from 'react';
+import {Animated, Image, StyleSheet, ImageStyle, StyleProp} from 'react-native';
 import {getCachedImageUri, peekCachedImageUri} from '../utils/imageCache';
 
 interface Props {
@@ -53,11 +45,39 @@ export const CachedImage = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fileKey]);
 
+  // Pulsing skeleton while the image loads/downloads.
+  const pulse = useRef(new Animated.Value(0.35)).current;
+  useEffect(() => {
+    if (uri) {
+      return;
+    }
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: 700,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 0.35,
+          duration: 700,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [uri, pulse]);
+
   if (!uri) {
     return (
-      <View style={[style as StyleProp<ImageStyle>, styles.placeholder]}>
-        <ActivityIndicator size="small" color={appColors.maroon} />
-      </View>
+      <Animated.View
+        style={[
+          style as StyleProp<ImageStyle>,
+          styles.placeholder,
+          {opacity: pulse},
+        ]}
+      />
     );
   }
   return <Image source={{uri}} style={style} resizeMode={resizeMode} />;
@@ -65,8 +85,6 @@ export const CachedImage = ({
 
 const styles = StyleSheet.create({
   placeholder: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.05)',
+    backgroundColor: 'rgba(94,23,23,0.12)',
   },
 });

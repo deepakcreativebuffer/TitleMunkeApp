@@ -74,6 +74,8 @@ export interface WsMessage {
   _clientId?: string;
   _pending?: boolean;
   _failed?: boolean;
+  // Attachment(s) still uploading in the background (show a spinner overlay).
+  _uploading?: boolean;
 }
 
 export interface WsParticipant {

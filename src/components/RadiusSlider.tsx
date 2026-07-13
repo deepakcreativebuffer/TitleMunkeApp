@@ -29,10 +29,16 @@ export const RadiusSlider = ({options, value, onChange}: Props) => {
   const indexRef = useRef(index);
   indexRef.current = index;
   const startXRef = useRef(0);
+  const draggingRef = useRef(false);
 
   // Animated ratio 0..1 along the track.
   const anim = useRef(new Animated.Value(n > 1 ? index / (n - 1) : 0)).current;
   useEffect(() => {
+    // While the finger is driving the thumb we set the value directly — don't
+    // let an external value change fire a competing spring.
+    if (draggingRef.current) {
+      return;
+    }
     Animated.spring(anim, {
       toValue: n > 1 ? index / (n - 1) : 0,
       useNativeDriver: false,
@@ -41,29 +47,53 @@ export const RadiusSlider = ({options, value, onChange}: Props) => {
     }).start();
   }, [index, anim, n]);
 
-  const setFromX = (x: number) => {
+  const ratioFromX = (x: number) => {
     const w = trackWRef.current;
     if (w <= 0) {
-      return;
+      return 0;
     }
-    const ratio = Math.max(0, Math.min(1, x / w));
+    return Math.max(0, Math.min(1, x / w));
+  };
+
+  // Snap to the nearest stop and notify the parent (only when it changes).
+  const commit = (ratio: number) => {
     const idx = Math.round(ratio * (n - 1));
     if (idx !== indexRef.current) {
       onChange(options[idx]);
     }
   };
 
+  // On release, spring the thumb to the nearest stop.
+  const settle = () => {
+    draggingRef.current = false;
+    Animated.spring(anim, {
+      toValue: n > 1 ? indexRef.current / (n - 1) : 0,
+      useNativeDriver: false,
+      bounciness: 8,
+      speed: 16,
+    }).start();
+  };
+
   const pan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
+      onPanResponderTerminationRequest: () => false,
       onPanResponderGrant: e => {
+        draggingRef.current = true;
+        anim.stopAnimation();
         startXRef.current = e.nativeEvent.locationX;
-        setFromX(e.nativeEvent.locationX);
+        const r = ratioFromX(e.nativeEvent.locationX);
+        anim.setValue(r); // thumb jumps to the finger immediately
+        commit(r);
       },
       onPanResponderMove: (_e, g) => {
-        setFromX(startXRef.current + g.dx);
+        const r = ratioFromX(startXRef.current + g.dx);
+        anim.setValue(r); // thumb tracks the finger continuously
+        commit(r);
       },
+      onPanResponderRelease: settle,
+      onPanResponderTerminate: settle,
     }),
   ).current;
 
@@ -141,7 +171,7 @@ export const RadiusSlider = ({options, value, onChange}: Props) => {
 const styles = StyleSheet.create({
   wrap: {paddingTop: scaleWidth(34)},
   trackArea: {
-    height: THUMB,
+    height: scaleWidth(40),
     justifyContent: 'center',
     marginHorizontal: THUMB / 2,
   },

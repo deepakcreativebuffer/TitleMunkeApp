@@ -466,12 +466,14 @@ const handleBareReply = (body: any) => {
       );
       return;
     }
-    // Empty array — attribute to the oldest in-flight history request if any,
-    // otherwise treat it as an (empty) conversations list.
+    // Empty array — attribute to the oldest in-flight history request if any.
+    // Otherwise it's ambiguous (an empty history page vs an empty conversation
+    // list): do NOT wipe the conversation list here — a real getConversations
+    // reply arrives as a typed `conversations` frame (which handles the empty
+    // case). Treating a stray empty array as "no conversations" would blank out
+    // a populated list (e.g. after opening a chat with no messages yet).
     if (historyQueue.length) {
       applyHistoryFrame(historyQueue[0], [], body.nextCursor ?? null);
-    } else {
-      dispatchConversations([]);
     }
     return;
   }

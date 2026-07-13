@@ -3,6 +3,8 @@ import {View, Text, Image, StyleSheet, ViewStyle} from 'react-native';
 import {appColors, scaleWidth} from '../global';
 import {getCachedImageUri, peekCachedImageUri} from '../utils/imageCache';
 
+const icPeople = require('../assets/images/ic-people.png');
+
 // Deterministic colored initials avatar — no image assets needed.
 const PALETTE = [
   '#5E1717',
@@ -42,6 +44,8 @@ interface Props {
   // and reused instantly on later renders — the signed `imageUrl` rotates, so
   // caching by URL would always miss. Falls back to `imageUrl` if absent.
   cacheKey?: string | null;
+  // Groups fall back to a people icon instead of name initials when no photo.
+  group?: boolean;
   style?: ViewStyle;
 }
 
@@ -52,6 +56,7 @@ export const Avatar = ({
   online,
   imageUrl,
   cacheKey,
+  group,
   style,
 }: Props) => {
   const s = size ?? scaleWidth(48);
@@ -92,15 +97,27 @@ export const Avatar = ({
 
   return (
     <View style={[{width: s, height: s}, style]}>
-      {/* Initials placeholder — always the base layer. */}
+      {/* Base layer — a group icon for groups, else name initials. */}
       <View
         style={[
           styles.circle,
           {width: s, height: s, borderRadius: s / 2, backgroundColor: bg},
         ]}>
-        <Text style={[styles.initials, {fontSize: s * 0.38}]}>
-          {getInitials(name)}
-        </Text>
+        {group ? (
+          <Image
+            source={icPeople}
+            style={{
+              width: s * 0.5,
+              height: s * 0.5,
+              tintColor: appColors.white,
+              resizeMode: 'contain',
+            }}
+          />
+        ) : (
+          <Text style={[styles.initials, {fontSize: s * 0.38}]}>
+            {getInitials(name)}
+          </Text>
+        )}
       </View>
       {uri ? (
         <Image
@@ -113,7 +130,10 @@ export const Avatar = ({
             width: s,
             height: s,
             borderRadius: s / 2,
-            opacity: loaded ? 1 : 0,
+            // A cached file:// image is known-good → show immediately (its
+            // onLoad won't re-fire after a refetch rotates the signed URL).
+            // A remote URL fades in once it actually loads.
+            opacity: uri.startsWith('file://') || loaded ? 1 : 0,
           }}
         />
       ) : null}

@@ -11,23 +11,19 @@ import {
   Modal,
   Easing,
 } from 'react-native';
-import {CommonActions} from '@react-navigation/native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {appColors, typography, scaleWidth, SCREEN_WIDTH} from '../global';
 import {navigationRef} from '../navigators/navigationRef';
 import {store} from '../store';
-import {logoutThunk} from '../thunks';
 import {isOrgRole, isAdminRole} from '../utils';
 
 const headerBg = require('../assets/images/drawer-header.png');
 const logoIcon = require('../assets/images/logo-icon.png');
 const icHome = require('../assets/images/ic-home.png');
 const icPeople = require('../assets/images/ic-people.png');
-const icFile = require('../assets/images/ic-file.png');
 const icList = require('../assets/images/ic-list.png');
 const icSettings = require('../assets/images/ic-settings.png');
 const icSearch = require('../assets/images/ic-search.png');
-const icLogout = require('../assets/images/ic-logout.png');
 
 const PANEL_W = Math.min(scaleWidth(300), SCREEN_WIDTH * 0.82);
 
@@ -40,13 +36,12 @@ type Item = {
   badge?: boolean; // show the messaging unread count
 };
 
-// Messages + Nearby Search now live in the bottom tab bar, so they're not in
-// the drawer. Requests + Settings moved out of the tab bar into the drawer
-// (reached as top-level stack routes).
+// Messages, Nearby Search and Requests live in the bottom tab bar, so they're
+// not in the drawer. Settings moved out of the tab bar into the drawer
+// (reached as a top-level stack route).
 const ITEMS: Item[] = [
   {key: 'Dashboard', label: 'Dashboard', icon: icHome, route: 'Home'},
   {key: 'Agents', label: 'Agents', icon: icPeople, rootRoute: 'Agents'},
-  {key: 'Requests', label: 'Requests', icon: icFile, rootRoute: 'Requests'},
   {key: 'Logs', label: 'Audit Logs', icon: icList, rootRoute: 'Logs'},
   {key: 'Settings', label: 'Settings', icon: icSettings, rootRoute: 'Settings'},
 ];
@@ -55,17 +50,15 @@ const ITEMS: Item[] = [
 const ORG_ITEMS: Item[] = [
   {key: 'Dashboard', label: 'Dashboard', icon: icHome, route: 'Home'},
   {key: 'Search', label: 'Search', icon: icSearch, rootRoute: 'Search'},
-  {key: 'Requests', label: 'Requests', icon: icFile, rootRoute: 'Requests'},
   {key: 'Users', label: 'Users', icon: icPeople, rootRoute: 'OrgUsers'},
   {key: 'Logs', label: 'Audit Logs', icon: icList, rootRoute: 'Logs'},
   {key: 'Settings', label: 'Settings', icon: icSettings, rootRoute: 'Settings'},
 ];
 
-// Admins have Search + Demo Requests + Users + Audit Logs.
+// Admins have Search + Users + Audit Logs.
 const ADMIN_ITEMS: Item[] = [
   {key: 'Dashboard', label: 'Dashboard', icon: icHome, route: 'Home'},
   {key: 'Search', label: 'Search', icon: icSearch, rootRoute: 'Search'},
-  {key: 'Requests', label: 'Demo Requests', icon: icFile, rootRoute: 'Requests'},
   {key: 'Users', label: 'Users', icon: icPeople, rootRoute: 'AdminUsers'},
   {key: 'Logs', label: 'Audit Logs', icon: icList, rootRoute: 'Logs'},
   {key: 'Settings', label: 'Settings', icon: icSettings, rootRoute: 'Settings'},
@@ -103,7 +96,6 @@ export const AppDrawer = ({
 }) => {
   const insets = useSafeAreaInsets();
   const [visible, setVisible] = useState(false);
-  const [confirmLogout, setConfirmLogout] = useState(false);
   const anim = useRef(new Animated.Value(0)).current;
 
   const profile = store.getState().user.user;
@@ -155,16 +147,6 @@ export const AppDrawer = ({
     } else if (item.route) {
       nav.navigate('TabNavigator', {screen: item.route});
     }
-  };
-
-  const doLogout = () => {
-    setConfirmLogout(false);
-    onClose();
-    // Audit log + Cognito sign-out + state reset (best-effort side-effects).
-    store.dispatch(logoutThunk());
-    navigationRef.dispatch(
-      CommonActions.reset({index: 0, routes: [{name: 'LoginScreen'}]}),
-    );
   };
 
   const translateX = anim.interpolate({
@@ -229,50 +211,9 @@ export const AppDrawer = ({
               );
             })}
 
-            <View style={styles.divider} />
-
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={() => setConfirmLogout(true)}
-              style={[styles.item, styles.logoutItem]}>
-              <Image
-                source={icLogout}
-                style={[styles.itemIcon, {tintColor: appColors.maroon}]}
-              />
-              <Text style={[styles.itemLabel, styles.itemLabelActive]}>
-                Log Out
-              </Text>
-            </TouchableOpacity>
-
             <Text style={styles.version}>v1.0 · Title Munke</Text>
           </View>
         </Animated.View>
-
-        {/* Logout confirmation (inline overlay — avoids nested native modals) */}
-        {confirmLogout ? (
-          <View style={styles.confirmOverlay}>
-            <View style={styles.confirmCard}>
-              <Text style={styles.confirmTitle}>Log out?</Text>
-              <Text style={styles.confirmMsg}>
-                You'll need to sign in again to access your account.
-              </Text>
-              <View style={styles.confirmActions}>
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  style={[styles.confirmBtn, styles.confirmCancel]}
-                  onPress={() => setConfirmLogout(false)}>
-                  <Text style={styles.confirmCancelText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  activeOpacity={0.9}
-                  style={[styles.confirmBtn, styles.confirmDanger]}
-                  onPress={doLogout}>
-                  <Text style={styles.confirmDangerText}>Log Out</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        ) : null}
       </View>
     </Modal>
   );

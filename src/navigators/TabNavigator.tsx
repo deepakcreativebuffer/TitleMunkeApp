@@ -4,13 +4,15 @@ import {
   SearchHistoryScreen,
   ConversationListScreen,
   NearbySearchScreen,
+  RequestsScreen,
 } from '../screens';
 import {HomeStackNavigator} from './HomeStackNavigator';
 import {TabBar} from './TabBar';
 
 const Tab = createBottomTabNavigator();
 
-// Same four tabs for every role: Home, Search History, Messages, Nearby Search.
+// Same tabs for every role: Dashboard, Searches Dashboard, Chat, Nearby
+// Search, Requests.
 const TabNavigator = () => {
   return (
     <Tab.Navigator
@@ -18,7 +20,7 @@ const TabNavigator = () => {
       tabBar={props => <TabBar {...props} />}>
       <Tab.Screen name="Home" component={HomeStackNavigator} />
       <Tab.Screen name="SearchHistory" component={SearchHistoryScreen} />
-      {/* These two are typed with native-stack props (also registered in the
+      {/* These are typed with native-stack props (also registered in the
           root stack), so cast for the bottom-tab component slot. */}
       <Tab.Screen
         name="Messages"
@@ -27,6 +29,10 @@ const TabNavigator = () => {
       <Tab.Screen
         name="NearbySearch"
         component={NearbySearchScreen as React.ComponentType}
+      />
+      <Tab.Screen
+        name="Requests"
+        component={RequestsScreen as React.ComponentType}
       />
     </Tab.Navigator>
   );

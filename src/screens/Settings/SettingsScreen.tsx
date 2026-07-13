@@ -33,7 +33,6 @@ const icEdit = require('../../assets/images/ic-edit.png');
 const icKey = require('../../assets/images/ic-key.png');
 const icBell = require('../../assets/images/ic-bell.png');
 const icMail = require('../../assets/images/ic-mail.png');
-const icHelp = require('../../assets/images/ic-help.png');
 const icShield = require('../../assets/images/ic-shield.png');
 const icLogout = require('../../assets/images/ic-logout.png');
 
@@ -259,11 +258,31 @@ export const SettingsScreen = () => {
           </View>
         </View>
 
-        {/* Support */}
-        <Text style={styles.sectionLabel}>SUPPORT</Text>
+        {/* Legal */}
+        <Text style={styles.sectionLabel}>LEGAL</Text>
         <View style={styles.card}>
-          <NavRow icon={icHelp} label="Help center" showDivider={false} />
-          <NavRow icon={icShield} label="Terms & Privacy" showDivider />
+          <NavRow
+            icon={icShield}
+            label="Privacy Policy"
+            showDivider
+            onPress={() =>
+              navigation.navigate('WebPage', {
+                title: 'Privacy Policy',
+                url: 'https://staging.d1n4t6s0drx6o.amplifyapp.com/privacy-policy',
+              })
+            }
+          />
+          <NavRow
+            icon={icShield}
+            label="Terms and Conditions"
+            showDivider={false}
+            onPress={() =>
+              navigation.navigate('WebPage', {
+                title: 'Terms and Conditions',
+                url: 'https://staging.d1n4t6s0drx6o.amplifyapp.com/terms-and-conditions',
+              })
+            }
+          />
         </View>
 
         {/* Log out */}

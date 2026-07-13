@@ -40,7 +40,7 @@ const fmtWhen = (raw?: string | number): string => {
   if (isNaN(d.getTime())) {
     return String(raw);
   }
-  return d.toLocaleString(undefined, {
+  return d.toLocaleString('en-US', {
     month: 'short',
     day: '2-digit',
     hour: '2-digit',
@@ -54,7 +54,7 @@ const mapRecent = (res: any) => {
     res?.listSearchHistories?.items ??
     res?.items ??
     (Array.isArray(res) ? res : []);
-  return items.slice(0, 5).map((it, i) => ({
+  return items.slice(0, 6).map((it, i) => ({
     id: String(it.id ?? it.search_id ?? i),
     address: it.address ?? '—',
     when: fmtWhen(it.created_at ?? it.createdAt),
@@ -73,7 +73,7 @@ export const SearchScreen = () => {
   const userId = profile?.sub;
 
   const recentFetcher = useCallback(
-    () => listSearchHistories({userType: role, userId, limit: 5}),
+    () => listSearchHistories({userType: role, userId, limit: 6}),
     [role, userId],
   );
   const {data: recentData, loading} = useFetch(recentFetcher, [
@@ -98,7 +98,7 @@ export const SearchScreen = () => {
         searchId: search.searchId,
       });
     }
-    return list.slice(0, 5);
+    return list.slice(0, 6);
   }, [
     recentData,
     search.searchId,

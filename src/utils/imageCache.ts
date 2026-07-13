@@ -20,6 +20,34 @@ const safeName = (k: string): string => k.replace(/[^a-zA-Z0-9._-]/g, '_');
 export const peekCachedImageUri = (fileKey?: string): string | undefined =>
   fileKey ? memCache[fileKey] : undefined;
 
+// Persist an already-local file (e.g. a just-picked group photo / sent image)
+// into the cache under its stable S3 key, so it survives after the picker's
+// TEMPORARY file is cleaned up. Copies the file into the cache dir rather than
+// just pointing at the ephemeral uri (which would break on the next reload).
+export const seedCachedImageUri = async (
+  fileKey?: string,
+  localUri?: string,
+): Promise<void> => {
+  if (!fileKey || !localUri || memCache[fileKey]) {
+    return;
+  }
+  const path = `${DIR}/${safeName(fileKey)}`;
+  try {
+    if (await ReactNativeBlobUtil.fs.exists(path)) {
+      memCache[fileKey] = `file://${path}`;
+      return;
+    }
+    await ReactNativeBlobUtil.fs.mkdir(DIR).catch(() => {});
+    await ReactNativeBlobUtil.fs.cp(localUri.replace('file://', ''), path);
+    memCache[fileKey] = `file://${path}`;
+  } catch {
+    // Copy failed — fall back to the (possibly ephemeral) local uri.
+    if (!memCache[fileKey]) {
+      memCache[fileKey] = localUri;
+    }
+  }
+};
+
 // Return a local file:// uri for the image, downloading it once if needed.
 // Falls back to the remote `url` if the download fails.
 export const getCachedImageUri = (

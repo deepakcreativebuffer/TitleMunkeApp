@@ -27,6 +27,7 @@ import {
   messagingErrorSelector,
   messagingPresenceSelector,
   messagingTypingSelector,
+  messagingMessagesSelector,
 } from '../../slices';
 import { Avatar } from '../../components/Avatar';
 import { conversationTimeLabel } from '../../utils/time';
@@ -42,6 +43,7 @@ const gridBg = require('../../assets/images/grid-bg.png');
 const icMenu = require('../../assets/images/ic-menu.png');
 const icSearch = require('../../assets/images/ic-search.png');
 const icMessage = require('../../assets/images/ic-message.png');
+const icPeople = require('../../assets/images/ic-people.png');
 
 export const ConversationListScreen = ({
   navigation,
@@ -55,6 +57,7 @@ export const ConversationListScreen = ({
   const error = useAppSelector(messagingErrorSelector);
   const presence = useAppSelector(messagingPresenceSelector);
   const typing = useAppSelector(messagingTypingSelector);
+  const messagesMap = useAppSelector(messagingMessagesSelector);
   const { openDrawer } = useDrawer();
   const [query, setQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
@@ -69,12 +72,18 @@ export const ConversationListScreen = ({
     return () => clearInterval(id);
   }, [typing]);
 
-  const unreadConvos = conversations.filter(c => (c.unreadCount ?? 0) > 0).length;
+  const unreadConvos = conversations.filter(
+    c => (c.unreadCount ?? 0) > 0,
+  ).length;
   const groupConvos = conversations.filter(c => c.type === 'GROUP').length;
-  const FILTERS: Array<{key: 'all' | 'unread' | 'groups'; label: string; count?: number}> = [
-    {key: 'all', label: 'All'},
-    {key: 'unread', label: 'Unread', count: unreadConvos},
-    {key: 'groups', label: 'Groups', count: groupConvos},
+  const FILTERS: Array<{
+    key: 'all' | 'unread' | 'groups';
+    label: string;
+    count?: number;
+  }> = [
+    { key: 'all', label: 'All' },
+    { key: 'unread', label: 'Unread', count: unreadConvos },
+    { key: 'groups', label: 'Groups', count: groupConvos },
   ];
 
   // Refresh the list whenever the screen gains focus (and on mount).
@@ -122,11 +131,24 @@ export const ConversationListScreen = ({
               : `${typers.length} people are typing…`
             : 'typing…';
       }
+      // Prefer the fully-loaded last message (has attachments) over the
+      // conversation's embedded one, so audio/image/doc previews resolve even
+      // when getConversations didn't include attachments.
+      const embedded = c.messages?.[0];
+      const loaded = messagesMap[c.id];
+      const lastLoaded = loaded?.length ? loaded[loaded.length - 1] : undefined;
+      const bestLast =
+        lastLoaded &&
+        (!embedded ||
+          new Date(lastLoaded.created_at).getTime() >=
+            new Date(embedded.created_at).getTime())
+          ? lastLoaded
+          : embedded;
       return {
         conv: c,
         title: conversationTitle(c, myUserId),
         avatar: conversationAvatar(c, myUserId),
-        preview: conversationPreview(c, myUserId),
+        preview: conversationPreview(c, myUserId, bestLast),
         typingLabel,
         online: other != null ? !!presence[other]?.online : false,
       };
@@ -137,8 +159,16 @@ export const ConversationListScreen = ({
     return list.filter(r => r.title.toLowerCase().includes(q));
     // typingTick forces re-eval so stale typers expire even without new events.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversations, myUserId, q, filter, presence, typing, typingTick]);
-
+  }, [
+    conversations,
+    myUserId,
+    q,
+    filter,
+    presence,
+    typing,
+    typingTick,
+    messagesMap,
+  ]);
   const openChat = (row: (typeof rows)[number]) =>
     navigation.navigate('Chat', {
       conversationId: row.conv.id,
@@ -148,7 +178,6 @@ export const ConversationListScreen = ({
     });
 
   const empty = conversations.length === 0;
-
   return (
     <ImageBackground source={gridBg} resizeMode="cover" style={styles.bg}>
       <StatusBar
@@ -167,7 +196,7 @@ export const ConversationListScreen = ({
             <Image source={icMenu} style={styles.menuIcon} />
           </TouchableOpacity>
           <View style={styles.titleRow}>
-            <Text style={styles.headerTitle}>Messages</Text>
+            <Text style={styles.headerTitle}>Chat</Text>
             {totalUnread > 0 ? (
               <View style={styles.titleBadge}>
                 <Text style={styles.titleBadgeText}>{totalUnread}</Text>
@@ -215,7 +244,9 @@ export const ConversationListScreen = ({
                 onPress={() => setFilter(f.key)}
                 style={[styles.pill, active && styles.pillActive]}
               >
-                <Text style={[styles.pillText, active && styles.pillTextActive]}>
+                <Text
+                  style={[styles.pillText, active && styles.pillTextActive]}
+                >
                   {f.label}
                   {f.count ? ` ${f.count}` : ''}
                 </Text>
@@ -282,6 +313,7 @@ export const ConversationListScreen = ({
                     id={row.avatar.id}
                     imageUrl={row.avatar.imageUrl}
                     cacheKey={row.avatar.imageKey}
+                    group={row.conv.type === 'GROUP'}
                     online={row.online}
                   />
                   <View
@@ -294,7 +326,10 @@ export const ConversationListScreen = ({
                       <View style={styles.nameWrap}>
                         {row.conv.type === 'GROUP' ? (
                           <View style={styles.groupChip}>
-                            <Text style={styles.groupChipIcon}>👥</Text>
+                            <Image
+                              source={icPeople}
+                              style={styles.groupChipIcon}
+                            />
                             <Text style={styles.groupChipText}>Group</Text>
                           </View>
                         ) : null}
@@ -363,7 +398,6 @@ export const ConversationListScreen = ({
           )}
         </ScrollView>
       </View>
-
     </ImageBackground>
   );
 };
@@ -526,7 +560,13 @@ const styles = StyleSheet.create({
     paddingVertical: scaleWidth(2),
     marginRight: scaleWidth(6),
   },
-  groupChipIcon: { fontSize: scaleWidth(10), marginRight: scaleWidth(3) },
+  groupChipIcon: {
+    width: scaleWidth(11),
+    height: scaleWidth(11),
+    marginRight: scaleWidth(4),
+    tintColor: appColors.maroon,
+    resizeMode: 'contain',
+  },
   groupChipText: {
     ...typography(700, 10, 'maroon'),
     fontWeight: '700',

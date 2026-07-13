@@ -223,6 +223,32 @@ const messagingSlice = createSlice({
       (state.messages[conversationId] ||= []).push(message);
       bumpConversation(state, conversationId, message, false);
     },
+    // Flip an optimistic (background-uploading) message's state by clientId.
+    updateOptimisticState: (
+      state,
+      action: PayloadAction<{
+        conversationId: number;
+        clientId: string;
+        uploading?: boolean;
+        failed?: boolean;
+      }>,
+    ) => {
+      const {conversationId, clientId, uploading, failed} = action.payload;
+      const m = state.messages[conversationId]?.find(
+        x => x._clientId === clientId,
+      );
+      if (m) {
+        if (uploading !== undefined) {
+          m._uploading = uploading;
+        }
+        if (failed !== undefined) {
+          m._failed = failed;
+          if (failed) {
+            m._pending = false;
+          }
+        }
+      }
+    },
     markOptimisticFailed: (
       state,
       action: PayloadAction<{conversationId: number; clientId: string}>,
@@ -465,6 +491,7 @@ export const {
   setHistory,
   prependHistory,
   addOptimisticMessage,
+  updateOptimisticState,
   markOptimisticFailed,
   addIncomingMessage,
   applyEditedMessage,
@@ -521,6 +548,9 @@ export const messagesByConversationSelector =
     conversationId != null
       ? s.messaging.messages[conversationId] ?? EMPTY_MESSAGES
       : EMPTY_MESSAGES;
+// Whole messages map — used by the list to derive a rich last-message preview
+// (with attachments) for chats whose embedded last message lacks them.
+export const messagingMessagesSelector = (s: RootState) => s.messaging.messages;
 
 export const conversationByIdSelector =
   (conversationId?: number) => (s: RootState) =>

@@ -72,29 +72,39 @@ export const messagePreview = (m?: WsMessage): string => {
     return 'This message was deleted';
   }
   if (m.content) {
-    if (parseSharedProperty(m.content)) {
-      return '🏠 Property';
-    }
     return parseSharedLocation(m.content) ? '📍 Location' : m.content;
   }
-  if (m.attachments?.length) {
-    if (m.attachments.some(a => a.file_type?.startsWith('audio'))) {
+  const atts = m.attachments;
+  if (atts?.length) {
+    if (atts.some(a => a.file_type?.startsWith('audio'))) {
       return '🎤 Voice message';
     }
-    return m.attachments.length > 1
-      ? `📎 ${m.attachments.length} attachments`
-      : '📎 Attachment';
+    if (atts.length > 1) {
+      return `📎 ${atts.length} attachments`;
+    }
+    const t = atts[0].file_type;
+    if (t?.startsWith('image')) {
+      return '📷 Photo';
+    }
+    if (t?.startsWith('video')) {
+      return '🎥 Video';
+    }
+    return '📄 Document';
   }
   return '';
 };
 
 // Preview of a conversation's last message (from getConversations). For groups
 // it's prefixed with the sender ("Alex: …" / "You: …") like WhatsApp.
+// `lastMsg` overrides the conversation's embedded last message — the list passes
+// the fully-loaded message (with attachments) when available, so audio/image/
+// document previews resolve even if getConversations didn't include attachments.
 export const conversationPreview = (
   conv: WsConversation,
   myUserId?: number | null,
+  lastMsg?: WsMessage,
 ): string => {
-  const m = conv.messages?.[0];
+  const m = lastMsg ?? conv.messages?.[0];
   const text = messagePreview(m);
   if (!m || !text || conv.type !== 'GROUP') {
     return text;
@@ -121,40 +131,6 @@ export const parseSharedLocation = (
     return null;
   }
   return {lat: parseFloat(m[1]), lng: parseFloat(m[2]), url: m[0]};
-};
-
-// A property shared into a chat (rendered as a card). Encoded as JSON in the
-// message content with a `__t:'property'` tag so it round-trips through the
-// plain-text message pipeline and reconstructs on the receiver's side.
-export interface SharedProperty {
-  address: string;
-  when?: string;
-  searchId?: string;
-  lat?: number;
-  lng?: number;
-  city?: string;
-  distanceKm?: number;
-}
-
-export const encodeSharedProperty = (p: SharedProperty): string =>
-  JSON.stringify({__t: 'property', ...p});
-
-export const parseSharedProperty = (
-  content?: string | null,
-): SharedProperty | null => {
-  if (!content) {
-    return null;
-  }
-  const s = content.trim();
-  if (s[0] !== '{') {
-    return null;
-  }
-  try {
-    const o = JSON.parse(s);
-    return o && o.__t === 'property' ? (o as SharedProperty) : null;
-  } catch {
-    return null;
-  }
 };
 
 // Whether a (soft-deleted) message should be hidden for me.

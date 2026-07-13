@@ -9,12 +9,7 @@ import {
 } from 'react-native';
 import { appColors, typography, scaleWidth } from '../global';
 
-export type AttachOption =
-  | 'photos'
-  | 'camera'
-  | 'location'
-  | 'properties'
-  | 'document';
+export type AttachOption = 'photos' | 'camera' | 'location' | 'document';
 
 interface Props {
   visible: boolean;
@@ -23,7 +18,7 @@ interface Props {
 }
 
 // WhatsApp-style attachment grid, themed to the app's warm maroon/coffee palette.
-// AI images / Poll / Event intentionally omitted. Five tiles on a single row.
+// AI images / Poll / Event intentionally omitted.
 const OPTIONS: Array<{
   key: AttachOption;
   label: string;
@@ -33,7 +28,6 @@ const OPTIONS: Array<{
   { key: 'camera', label: 'Camera', bg: appColors.warning },
   { key: 'location', label: 'Location', bg: appColors.success },
   { key: 'document', label: 'Document', bg: appColors.coffeeDark },
-  { key: 'properties', label: 'Properties', bg: appColors.maroon },
 ];
 
 // Crisp white line-art glyphs drawn with plain Views (no icon dependency), so
@@ -76,19 +70,6 @@ const AttachIcon = ({ name }: { name: AttachOption }) => {
           <View style={ic.docLine} />
           <View style={ic.docLine} />
           <View style={ic.docLineShort} />
-        </View>
-      );
-    case 'properties':
-      // Classical building: roof + columns + base (matches a real-estate theme).
-      return (
-        <View style={ic.bldWrap}>
-          <View style={ic.bldRoof} />
-          <View style={ic.bldCols}>
-            {[0, 1, 2, 3].map(i => (
-              <View key={i} style={ic.bldCol} />
-            ))}
-          </View>
-          <View style={ic.bldBase} />
         </View>
       );
   }
@@ -304,42 +285,5 @@ const ic = StyleSheet.create({
     height: ST,
     backgroundColor: ICON,
     borderRadius: w(1),
-  },
-  // Properties (building)
-  bldWrap: {
-    width: w(26),
-    height: w(24),
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-  },
-  bldRoof: {
-    position: 'absolute',
-    top: 0,
-    width: 0,
-    height: 0,
-    borderLeftWidth: w(13),
-    borderRightWidth: w(13),
-    borderBottomWidth: w(9),
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    borderBottomColor: ICON,
-  },
-  bldCols: {
-    position: 'absolute',
-    top: w(9),
-    width: w(20),
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  bldCol: {
-    width: w(3),
-    height: w(11),
-    backgroundColor: ICON,
-  },
-  bldBase: {
-    width: w(24),
-    height: w(3),
-    borderRadius: w(1),
-    backgroundColor: ICON,
   },
 });

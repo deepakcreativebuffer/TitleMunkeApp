@@ -22,7 +22,12 @@ import {
   getNearbySearchProperties,
   listSearchHistories,
 } from '../../api/userAdmin.api';
-import {geocodeMany} from '../../api/geocode';
+import {geocodeMany, LatLng} from '../../api/geocode';
+import {
+  getCurrentLocation,
+  requestLocationPermission,
+  showLocationBlockedAlert,
+} from '../../api/location';
 
 const gridBg = require('../../assets/images/grid-bg.png');
 const icMenu = require('../../assets/images/ic-menu.png');
@@ -49,12 +54,22 @@ const haversineKm = (
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 };
 
+// Distance from the search center, rounded to one decimal (KM).
+const distanceFrom = (center: LatLng, lat: number, lng: number): number =>
+  Math.round(
+    haversineKm(center.latitude, center.longitude, lat, lng) * 10,
+  ) / 10;
+
 // Map a raw property from /get-nearby-search-properties into a NearbyProperty.
 // The backend shape is read defensively (snake/camel case + nested variants).
-// Distance is computed from the search origin so it stays consistent with the
+// Distance is computed from the search center so it stays consistent with the
 // KM display regardless of what the API returns. A searchId makes the entry
 // report-linkable on the map.
-const toNearbyProperty = (it: any, idx: number): NearbyProperty | null => {
+const toNearbyProperty = (
+  it: any,
+  idx: number,
+  center: LatLng,
+): NearbyProperty | null => {
   const latitude = Number(it?.latitude ?? it?.lat ?? it?.location?.lat);
   const longitude = Number(
     it?.longitude ?? it?.lng ?? it?.lon ?? it?.long ?? it?.location?.lng,
@@ -69,11 +84,7 @@ const toNearbyProperty = (it: any, idx: number): NearbyProperty | null => {
     id: `api-${searchId ?? it?.id ?? idx}`,
     addressName: address || 'Property',
     area: it?.area ?? it?.city ?? it?.county ?? 'Nearby property',
-    distance:
-      Math.round(
-        haversineKm(ORIGIN.latitude, ORIGIN.longitude, latitude, longitude) *
-          10,
-      ) / 10,
+    distance: distanceFrom(center, latitude, longitude),
     latitude,
     longitude,
     ...(address ? {address} : {}),
@@ -95,6 +106,9 @@ export const NearbySearchScreen = ({
   const [results, setResults] = useState<NearbyProperty[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
   const [realProps, setRealProps] = useState<NearbyProperty[]>([]);
+  // Search center — the user's real device location once resolved, otherwise
+  // the Lehigh Valley origin as a fallback (permission denied / no GPS fix).
+  const [center, setCenter] = useState<LatLng>(ORIGIN);
 
   // Pull a few of the user's actual completed searches (real searchId +
   // address) and geocode them, so they appear as real, redirectable properties.
@@ -162,14 +176,30 @@ export const NearbySearchScreen = ({
   }, [userId, role]);
 
   const onFind = useCallback(async () => {
+    // Ask for location permission the moment the user tries to search. If it's
+    // permanently blocked, guide them to Settings; if just denied this time,
+    // let them retry. Either way we don't run a search from a wrong location.
+    const perm = await requestLocationPermission();
+    if (perm !== 'granted') {
+      if (perm === 'blocked') {
+        showLocationBlockedAlert();
+      }
+      return;
+    }
+
     setLoading(true);
     setHasSearched(true);
     try {
-      // Ask the backend for properties within the chosen radius of the search
-      // origin (radius is in KM in the UI, the API expects metres).
+      // Use a fresh device fix as the search center (fall back to the last
+      // known center if the GPS read fails), and keep it for distance math.
+      const loc = (await getCurrentLocation()) ?? center;
+      setCenter(loc);
+
+      // Ask the backend for properties within the chosen radius of the user's
+      // location (radius is in KM in the UI, the API expects metres).
       const res: any = await getNearbySearchProperties({
-        lat: ORIGIN.latitude,
-        lng: ORIGIN.longitude,
+        lat: loc.latitude,
+        lng: loc.longitude,
         radiusMeters: radius * 1000,
         limit: 50,
       });
@@ -180,14 +210,21 @@ export const NearbySearchScreen = ({
         res?.data?.properties ??
         (Array.isArray(res) ? res : []);
       const apiProps = items
-        .map(toNearbyProperty)
+        .map((it, idx) => toNearbyProperty(it, idx, loc))
         .filter((p): p is NearbyProperty => p !== null);
+
+      // Recompute the user's real searches' distances relative to this center
+      // so the two sources are comparable.
+      const centeredReal = realProps.map(p => ({
+        ...p,
+        distance: distanceFrom(loc, p.latitude, p.longitude),
+      }));
 
       // Merge the user's real searches with the API results, de-duplicate by
       // address (preferring entries that carry a real searchId), then filter
       // by radius as a client-side guard and sort nearest-first.
       const byAddr = new Map<string, NearbyProperty>();
-      [...realProps, ...apiProps].forEach(p => {
+      [...centeredReal, ...apiProps].forEach(p => {
         const key = (p.address ?? p.addressName).toLowerCase().trim();
         const existing = byAddr.get(key);
         if (!existing || (!existing.searchId && p.searchId)) {
@@ -204,7 +241,7 @@ export const NearbySearchScreen = ({
     } finally {
       setLoading(false);
     }
-  }, [radius, realProps]);
+  }, [radius, realProps, center]);
 
   return (
     <ImageBackground source={gridBg} resizeMode="cover" style={styles.bg}>

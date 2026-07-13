@@ -10,6 +10,7 @@ const ICONS: Record<string, number> = {
   Home: require('../assets/images/ic-home.png'),
   SearchHistory: require('../assets/images/ic-clock.png'),
   NearbySearch: require('../assets/images/ic-pin.png'),
+  Requests: require('../assets/images/ic-file.png'),
 };
 
 // Outline chat bubble drawn in code — matches the stroke style of the other
@@ -63,10 +64,11 @@ const ChatIcon = ({color, size}: {color: string; size: number}) => {
 
 // Friendly labels (route names can't carry a space).
 const LABELS: Record<string, string> = {
-  Home: 'Home',
-  SearchHistory: 'Search History',
-  Messages: 'Messages',
+  Home: 'Dashboard',
+  SearchHistory: 'Searches',
+  Messages: 'Chat',
   NearbySearch: 'Nearby',
+  Requests: 'Requests',
 };
 
 export const TabBar = ({state, navigation}: BottomTabBarProps) => {

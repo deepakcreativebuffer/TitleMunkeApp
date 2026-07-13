@@ -17,19 +17,42 @@ export const timeAgo = (ts: number): string => {
   if (days < 7) {
     return `${days} day${days > 1 ? 's' : ''} ago`;
   }
-  return new Date(ts).toLocaleDateString(undefined, {
+  return new Date(ts).toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
   });
 };
 
 export const clockTime = (ts: number): string =>
-  new Date(ts).toLocaleTimeString(undefined, {
+  new Date(ts).toLocaleTimeString('en-US', {
     hour: '2-digit',
     minute: '2-digit',
   });
 
-export const lastSeenLabel = (ts: number): string => `Last seen ${timeAgo(ts)}`;
+// WhatsApp-style "last seen":
+//   today     → "last seen today at 10:57 AM"
+//   yesterday → "last seen yesterday at 10:57 AM"
+//   this week → "last seen Monday at 10:57 AM"
+//   older     → "last seen 14/06/2025 at 10:57 AM"
+export const lastSeenLabel = (ts: number): string => {
+  const d = new Date(ts);
+  const now = new Date();
+  const startOfDay = (x: Date) =>
+    new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diffDays = Math.round((startOfDay(now) - startOfDay(d)) / 86400000);
+  const time = clockTime(ts);
+  let when: string;
+  if (diffDays <= 0) {
+    when = 'today';
+  } else if (diffDays === 1) {
+    when = 'yesterday';
+  } else if (diffDays < 7) {
+    when = d.toLocaleDateString('en-US', {weekday: 'long'});
+  } else {
+    when = d.toLocaleDateString('en-US');
+  }
+  return `last seen ${when} at ${time}`;
+};
 
 // WhatsApp-style conversation-list timestamp:
 //   today → time (8:09 PM), yesterday → "Yesterday",
@@ -47,7 +70,7 @@ export const conversationTimeLabel = (ts: number): string => {
     return 'Yesterday';
   }
   if (diffDays < 7) {
-    return d.toLocaleDateString(undefined, {weekday: 'long'});
+    return d.toLocaleDateString('en-US', {weekday: 'long'});
   }
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
@@ -71,13 +94,13 @@ export const dateSeparatorLabel = (ts: number): string => {
     return 'Yesterday';
   }
   if (diffDays < 7) {
-    return d.toLocaleDateString(undefined, {weekday: 'long'}); // "Monday"
+    return d.toLocaleDateString('en-US', {weekday: 'long'}); // "Monday"
   }
   const sameYear = d.getFullYear() === now.getFullYear();
   return d.toLocaleDateString(
-    undefined,
+    'en-US',
     sameYear
-      ? {weekday: 'short', day: '2-digit', month: 'short'} // "Sun, 14 Jun"
-      : {day: '2-digit', month: 'short', year: 'numeric'},
+      ? {weekday: 'short', month: 'short', day: '2-digit'} // "Sun, Jun 14"
+      : {month: 'short', day: '2-digit', year: 'numeric'}, // "Jun 14, 2024"
   );
 };

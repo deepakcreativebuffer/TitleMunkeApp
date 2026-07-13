@@ -141,6 +141,13 @@ export const SearchCard = () => {
             placeholder="Enter address here..."
             placeholderTextColor="rgba(142, 35, 35, 0.55)"
           />
+          <TouchableOpacity
+            style={[styles.inlineSearchBtn, searching && styles.searchBtnDisabled]}
+            activeOpacity={0.85}
+            disabled={searching}
+            onPress={onSearch}>
+            <Image source={icSearch} style={styles.inlineSearchIcon} />
+          </TouchableOpacity>
         </View>
         {showSuggestions && suggestions.length > 0 ? (
           <View style={styles.suggestBox}>
@@ -173,15 +180,6 @@ export const SearchCard = () => {
       </TouchableOpacity>
 
       {error ? <Text style={styles.searchError}>{error}</Text> : null}
-
-      <TouchableOpacity
-        activeOpacity={0.9}
-        style={[styles.searchBtn, searching && styles.searchBtnDisabled]}
-        disabled={searching}
-        onPress={onSearch}>
-        <Text style={styles.searchBtnText}>Search</Text>
-        <Image source={icSearch} style={styles.searchBtnIcon} />
-      </TouchableOpacity>
 
       {searching ? (
         <TouchableOpacity
@@ -293,15 +291,24 @@ const styles = StyleSheet.create({
     ...typography('regular', 12, 'error'),
     marginBottom: scaleWidth(10),
   },
-  searchBtn: {
-    height: scaleWidth(52),
-    borderRadius: scaleWidth(12),
+  // Icon-only search button sitting inside the address input, right side.
+  inlineSearchBtn: {
+    width: scaleWidth(40),
+    height: scaleWidth(40),
+    borderRadius: scaleWidth(10),
     backgroundColor: appColors.maroon,
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    marginLeft: scaleWidth(8),
+    marginRight: -scaleWidth(6),
   },
-  searchBtnDisabled: {opacity: 0.75},
+  inlineSearchIcon: {
+    width: scaleWidth(18),
+    height: scaleWidth(18),
+    tintColor: appColors.white,
+    resizeMode: 'contain',
+  },
+  searchBtnDisabled: {opacity: 0.5},
   disabledBox: {backgroundColor: 'rgba(0,0,0,0.03)'},
   disabledDim: {opacity: 0.5},
   progressBlock: {alignItems: 'center', marginTop: scaleWidth(18)},
@@ -310,12 +317,5 @@ const styles = StyleSheet.create({
     ...typography('regular', 13, 'gray'),
     marginTop: scaleWidth(8),
     textAlign: 'center',
-  },
-  searchBtnText: {...typography(600, 16, 'white'), fontWeight: '600'},
-  searchBtnIcon: {
-    width: scaleWidth(17),
-    height: scaleWidth(17),
-    tintColor: appColors.white,
-    marginLeft: scaleWidth(8),
   },
 });

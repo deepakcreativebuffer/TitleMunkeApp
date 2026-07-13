@@ -74,6 +74,7 @@ export const AppNavigator = () => (
       name="DocumentViewer"
       component={Screens.DocumentViewerScreen}
     />
+    <Stack.Screen name="WebPage" component={Screens.WebPageScreen} />
     <Stack.Screen name="Agents" component={Screens.AgentsScreen} />
     <Stack.Screen name="AddAgent" component={Screens.AddAgentScreen} />
     <Stack.Screen

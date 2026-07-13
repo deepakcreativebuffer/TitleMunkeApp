@@ -59,7 +59,7 @@ const fmt = (raw?: string | number): string => {
   if (isNaN(d.getTime())) {
     return String(raw);
   }
-  return d.toLocaleString(undefined, {
+  return d.toLocaleString('en-US', {
     month: 'short',
     day: '2-digit',
     year: 'numeric',

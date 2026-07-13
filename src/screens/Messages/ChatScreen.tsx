@@ -20,12 +20,9 @@ import {
   Animated,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { appColors, typography, scaleWidth } from '../../global';
 import {
   AppScreenProps,
-  AppStackParamList,
   WsMessage,
   WsAttachment,
   AttachmentInput,
@@ -44,9 +41,9 @@ import {
   typingInSelector,
   setActiveConversation,
   addOptimisticMessage,
+  updateOptimisticState,
+  markOptimisticFailed,
   markConversationReadLocally,
-  userRoleSelector,
-  userProfileSelector,
 } from '../../slices';
 import { Avatar } from '../../components/Avatar';
 import { CachedImage } from '../../components/CachedImage';
@@ -60,15 +57,7 @@ import {
   attachmentViewUrl,
   userImageUrl,
   parseSharedLocation,
-  parseSharedProperty,
-  encodeSharedProperty,
-  SharedProperty,
 } from '../../utils/chat';
-import { listSearchHistories } from '../../api/userAdmin.api';
-import {
-  mapSearchHistory,
-  PropertyHistoryItem,
-} from '../../utils/searchHistory';
 import {
   wsGetMessageHistory,
   wsSendMessage,
@@ -88,12 +77,14 @@ import {
   isImageType,
   PICKER_UNAVAILABLE,
   PERMISSION_DENIED,
+  BLOCKED_FILE_TYPE,
 } from '../../services/attachmentUpload';
 import {
   AttachmentSheet,
   AttachOption,
 } from '../../components/AttachmentSheet';
 import { VoiceMessage } from '../../components/VoiceMessage';
+import { seedCachedImageUri } from '../../utils/imageCache';
 import {
   startRecording,
   stopRecording,
@@ -107,11 +98,11 @@ import EmojiSelector from 'react-native-emoji-selector';
 const gridBg = require('../../assets/images/grid-bg.png');
 const icChevron = require('../../assets/images/ic-chevron.png');
 const icSend = require('../../assets/images/ic-send.png');
-const icDoc = require('../../assets/images/ic-message.png');
 
 const icCheck = require('../../assets/images/ic-check-plain.png');
 const icClock = require('../../assets/images/ic-clock.png');
 const icPin = require('../../assets/images/ic-pin.png');
+const icFile = require('../../assets/images/ic-file.png');
 const mapBg = require('../../assets/images/streetmap.png');
 const icTrash = require('../../assets/images/ic-trash.png');
 
@@ -205,7 +196,6 @@ export const ChatScreen = ({ navigation, route }: AppScreenProps<'Chat'>) => {
   const [kbVisible, setKbVisible] = useState(false);
   const [localPending, setLocalPending] = useState<WsMessage[]>([]);
   const [pendingFiles, setPendingFiles] = useState<PickedFile[]>([]);
-  const [uploading, setUploading] = useState(false);
   const [replyTo, setReplyTo] = useState<WsMessage | null>(null);
   const [editing, setEditing] = useState<WsMessage | null>(null);
   const [actionMsg, setActionMsg] = useState<WsMessage | null>(null);
@@ -226,17 +216,6 @@ export const ChatScreen = ({ navigation, route }: AppScreenProps<'Chat'>) => {
     },
     [],
   );
-  // Share-property picker (fetched from the same search-history API).
-  const [propertyOpen, setPropertyOpen] = useState(false);
-  const [properties, setProperties] = useState<PropertyHistoryItem[]>([]);
-  const [loadingProperties, setLoadingProperties] = useState(false);
-  const [selectedPropIds, setSelectedPropIds] = useState<string[]>([]);
-
-  const role = useAppSelector(userRoleSelector);
-  const profile = useAppSelector(userProfileSelector);
-  // Root-stack nav for property screens (PropertyReport / SearchMap live there).
-  const rootNav = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
-
   const listRef = useRef<FlatList<any>>(null);
 
   // Prefer the LIVE conversation name (reflects group renames) over the title
@@ -252,7 +231,7 @@ export const ChatScreen = ({ navigation, route }: AppScreenProps<'Chat'>) => {
   const presenceLabel = isGroupChat
     ? ''
     : isOnline
-    ? 'Online'
+    ? 'online'
     : otherPresence?.lastSeen
     ? lastSeenLabel(new Date(otherPresence.lastSeen).getTime())
     : '';
@@ -445,6 +424,94 @@ export const ChatScreen = ({ navigation, route }: AppScreenProps<'Chat'>) => {
     }
   };
 
+  // Fire the real WS send at whichever target this chat has.
+  const wsSendTo = (
+    content: string,
+    attachments: AttachmentInput[] | undefined,
+    replyToId?: number,
+  ) => {
+    if (resolvedConvId != null) {
+      wsSendMessage({ conversationId: resolvedConvId, content, replyToId, attachments });
+    } else if (isGroupChat && groupId != null) {
+      wsSendMessage({ groupId, content, replyToId, attachments });
+    } else if (toUserId != null) {
+      wsSendMessage({ toUserId, content, replyToId, attachments });
+    }
+  };
+
+  // WhatsApp-style attachment send: show the message on screen INSTANTLY (from
+  // the local file), upload in the background, then fire the real send once the
+  // upload finishes. The server echo reconciles/replaces the optimistic one.
+  const sendFilesOptimistically = async (text: string, files: PickedFile[]) => {
+    const replyToId = replyTo?.id;
+    const clientId = `c-${Date.now()}-${Math.random()}`;
+    const convId = resolvedConvId;
+    const optimistic: WsMessage = {
+      id: -Date.now(),
+      conversation_id: convId ?? -1,
+      sender_id: myUserId ?? -1,
+      content: text || null,
+      reply_to_id: replyToId ?? null,
+      reply_to: replyTo ?? null,
+      created_at: new Date().toISOString(),
+      sender: { id: myUserId ?? -1, name: 'You' },
+      attachments: files.map(f => ({
+        file_name: f.name,
+        file_key: '',
+        file_type: f.type,
+        file_size: f.size,
+        url: f.uri, // local preview until the signed URL arrives
+      })),
+      reactions: [],
+      _clientId: clientId,
+      _pending: true,
+      _uploading: true,
+    };
+    if (convId != null) {
+      dispatch(
+        addOptimisticMessage({ conversationId: convId, message: optimistic }),
+      );
+    } else {
+      setLocalPending(prev => [...prev, optimistic]);
+    }
+    setReplyTo(null);
+
+    try {
+      const attachments = await uploadAttachments(files);
+      // Seed the cache so the echoed message (real S3 key) reuses the local
+      // file instead of re-downloading → no flicker.
+      attachments.forEach(a => {
+        if (isImageType(a.fileType)) {
+          void seedCachedImageUri(a.fileKey, a.localUri);
+        }
+      });
+      wsSendTo(text, attachments, replyToId);
+      if (convId != null) {
+        dispatch(
+          updateOptimisticState({ conversationId: convId, clientId, uploading: false }),
+        );
+      } else {
+        setLocalPending(prev =>
+          prev.map(m =>
+            m._clientId === clientId ? { ...m, _uploading: false } : m,
+          ),
+        );
+      }
+    } catch {
+      if (convId != null) {
+        dispatch(markOptimisticFailed({ conversationId: convId, clientId }));
+      } else {
+        setLocalPending(prev =>
+          prev.map(m =>
+            m._clientId === clientId
+              ? { ...m, _uploading: false, _pending: false, _failed: true }
+              : m,
+          ),
+        );
+      }
+    }
+  };
+
   // ── Typing indicator (outbound) ────────────────────────────────────────────
   const lastTypingSent = useRef(0);
   const typingTarget = (): {
@@ -508,27 +575,22 @@ export const ChatScreen = ({ navigation, route }: AppScreenProps<'Chat'>) => {
       return;
     }
 
-    if (!text && pendingFiles.length === 0) {
+    const files = pendingFiles;
+    if (!text && files.length === 0) {
       return;
     }
 
-    let attachments: AttachmentInput[] | undefined;
-    if (pendingFiles.length) {
-      try {
-        setUploading(true);
-        attachments = await uploadAttachments(pendingFiles);
-      } catch (e) {
-        setUploading(false);
-        Alert.alert('Upload failed', 'Could not upload the attachment.');
-        return;
-      }
-      setUploading(false);
-    }
-
-    dispatchSend(text, attachments);
+    // Clear the composer immediately — the message shows on screen instantly.
     setInput('');
     setPendingFiles([]);
-    setReplyTo(null);
+
+    if (files.length === 0) {
+      dispatchSend(text);
+      setReplyTo(null);
+      return;
+    }
+    // Attachments: show optimistically now, upload + send in the background.
+    void sendFilesOptimistically(text, files);
   };
 
   // ── Voice messages ─────────────────────────────────────────────────────────
@@ -585,22 +647,14 @@ export const ChatScreen = ({ navigation, route }: AppScreenProps<'Chat'>) => {
       await cancelRecording();
       return;
     }
-    try {
-      setUploading(true);
-      const file: PickedFile = {
-        uri,
-        name: `voice_${Date.now()}_${Math.round(ms)}ms.m4a`,
-        type: 'audio/mp4', // .m4a is an MPEG-4 audio container
-        size: 0,
-      };
-      const attachments = await uploadAttachments([file]);
-      setUploading(false);
-      dispatchSend('', attachments);
-      setReplyTo(null);
-    } catch {
-      setUploading(false);
-      Alert.alert('Voice messages', 'Could not send the voice message.');
-    }
+    const file: PickedFile = {
+      uri,
+      name: `voice_${Date.now()}_${Math.round(ms)}ms.m4a`,
+      type: 'audio/mp4', // .m4a is an MPEG-4 audio container
+      size: 0,
+    };
+    // Show the voice note immediately; upload + send in the background.
+    void sendFilesOptimistically('', [file]);
   };
 
   const notifyUnavailable = (e: unknown, fallback: string) => {
@@ -633,56 +687,6 @@ export const ChatScreen = ({ navigation, route }: AppScreenProps<'Chat'>) => {
     }
   };
 
-  // Share property: open a picker fed by the same search-history API.
-  const openPropertyPicker = () => {
-    setSelectedPropIds([]);
-    setPropertyOpen(true);
-    setLoadingProperties(true);
-    const brokerId = profile?.sub;
-    const isAgent = role === 'agent';
-    listSearchHistories({
-      userType: role,
-      ...(isAgent ? {} : { brokerId }),
-      userId: brokerId,
-      limit: 50,
-    })
-      .then(res => setProperties(mapSearchHistory(res)))
-      .catch(() => setProperties([]))
-      .finally(() => setLoadingProperties(false));
-  };
-
-  const togglePropSelect = (id: string) => {
-    setSelectedPropIds(prev => {
-      if (prev.includes(id)) {
-        return prev.filter(p => p !== id);
-      }
-      if (prev.length >= 2) {
-        // Cap at two — drop the oldest to keep the newest tap.
-        return [prev[1], id];
-      }
-      return [...prev, id];
-    });
-  };
-
-  const shareSelectedProperties = () => {
-    const chosen = properties.filter(p => selectedPropIds.includes(p.id));
-    setPropertyOpen(false);
-    // One card per property so each is independently tappable.
-    chosen.forEach(p =>
-      dispatchSend(
-        encodeSharedProperty({
-          address: p.address,
-          when: p.when,
-          searchId: p.searchId,
-          lat: p.latitude,
-          lng: p.longitude,
-        }),
-      ),
-    );
-    setSelectedPropIds([]);
-    setReplyTo(null);
-  };
-
   // WhatsApp-style attachment menu handler.
   const onAttachSelect = async (option: AttachOption) => {
     setAttachOpen(false);
@@ -710,10 +714,15 @@ export const ChatScreen = ({ navigation, route }: AppScreenProps<'Chat'>) => {
         }
       } else if (option === 'location') {
         await sendLocation();
-      } else if (option === 'properties') {
-        openPropertyPicker();
       }
     } catch (e) {
+      if (e instanceof Error && e.message === BLOCKED_FILE_TYPE) {
+        Alert.alert(
+          'File not supported',
+          'ZIP and other archive files can’t be shared in chat. Please pick a document, image, or PDF.',
+        );
+        return;
+      }
       notifyUnavailable(e, 'Could not open the picker.');
     }
   };
@@ -783,32 +792,6 @@ export const ChatScreen = ({ navigation, route }: AppScreenProps<'Chat'>) => {
       type: a.file_type,
       fileKey: a.file_key,
       isImage: isImageType(a.file_type),
-    });
-  };
-
-  // Open a shared property's full report (same screen as search history).
-  const openProperty = (p: SharedProperty) => {
-    rootNav.navigate('PropertyReport', {
-      address: p.address,
-      when: p.when ?? '',
-      searchId: p.searchId,
-    });
-  };
-
-  // Open the property on the in-app map (same SearchMap screen).
-  const openPropertyMap = (p: SharedProperty) => {
-    rootNav.navigate('SearchMap', {
-      items: [
-        {
-          id: p.searchId ?? p.address,
-          address: p.address,
-          when: p.when ?? '',
-          status: 'SUCCESS',
-          searchId: p.searchId,
-          latitude: p.lat,
-          longitude: p.lng,
-        },
-      ],
     });
   };
 
@@ -924,18 +907,23 @@ export const ChatScreen = ({ navigation, route }: AppScreenProps<'Chat'>) => {
                     Number(a.file_name?.match(/_(\d+)ms/)?.[1]) || undefined
                   }
                 />
-              ) : isImageType(a.file_type) && a.file_key ? (
+              ) : isImageType(a.file_type) ? (
                 <TouchableOpacity
                   key={i}
                   activeOpacity={0.9}
-                  onPress={() => openAttachment(a)}
+                  onPress={() => !item._uploading && openAttachment(a)}
                 >
                   <CachedImage
-                    fileKey={a.file_key}
+                    fileKey={a.file_key || undefined}
                     url={attachmentViewUrl(a)}
                     style={styles.imageAttach}
                     resizeMode="cover"
                   />
+                  {item._uploading ? (
+                    <View style={styles.uploadOverlay}>
+                      <ActivityIndicator color={appColors.white} />
+                    </View>
+                  ) : null}
                 </TouchableOpacity>
               ) : (
                 <TouchableOpacity
@@ -944,7 +932,7 @@ export const ChatScreen = ({ navigation, route }: AppScreenProps<'Chat'>) => {
                   onPress={() => a.file_key && openAttachment(a)}
                   style={[styles.fileChip, mine && styles.fileChipMine]}
                 >
-                  <Image source={icDoc} style={styles.fileIcon} />
+                  <Image source={icFile} style={styles.fileIcon} />
                   <View style={{ flex: 1 }}>
                     <Text
                       style={[styles.fileName, mine && styles.textMine]}
@@ -965,49 +953,6 @@ export const ChatScreen = ({ navigation, route }: AppScreenProps<'Chat'>) => {
             )}
 
             {(() => {
-              const prop = parseSharedProperty(item.content);
-              if (prop) {
-                const parts = prop.address.split(',');
-                const line1 = parts[0]?.trim() || prop.address;
-                const line2 =
-                  parts.slice(1).join(',').trim() || prop.when || '';
-                return (
-                  <View style={styles.propCard}>
-                    <TouchableOpacity
-                      activeOpacity={0.85}
-                      onPress={() => openProperty(prop)}
-                      style={styles.propTop}
-                    >
-                      <View style={styles.propIconTile}>
-                        <Image source={icPin} style={styles.propPin} />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.propTitle} numberOfLines={1}>
-                          {line1}
-                        </Text>
-                        {line2 ? (
-                          <Text style={styles.propSub} numberOfLines={1}>
-                            {line2}
-                          </Text>
-                        ) : null}
-                      </View>
-                      {prop.distanceKm != null ? (
-                        <Text style={styles.propDist}>
-                          {prop.distanceKm.toFixed(1)} KM
-                        </Text>
-                      ) : null}
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      activeOpacity={0.8}
-                      onPress={() => openPropertyMap(prop)}
-                      style={styles.propMapBtn}
-                    >
-                      <Image source={icPin} style={styles.propMapIcon} />
-                      <Text style={styles.propMapText}>View on Map</Text>
-                    </TouchableOpacity>
-                  </View>
-                );
-              }
               const loc = parseSharedLocation(item.content);
               if (loc) {
                 return (
@@ -1149,6 +1094,7 @@ export const ChatScreen = ({ navigation, route }: AppScreenProps<'Chat'>) => {
                   ? conv?.group?.image_key ?? undefined
                   : other?.user?.profile_image_key ?? undefined
               }
+              group={isGroupChat}
               online={isOnline}
               size={scaleWidth(40)}
               style={{ marginRight: scaleWidth(10) }}
@@ -1297,12 +1243,25 @@ export const ChatScreen = ({ navigation, route }: AppScreenProps<'Chat'>) => {
                   </TouchableOpacity>
                 </View>
               ) : (
-                <View key={i} style={styles.attachPill}>
-                  <Text style={styles.attachPillText} numberOfLines={1}>
-                    📎 {f.name}
-                  </Text>
-                  <TouchableOpacity onPress={remove}>
-                    <Text style={styles.attachRemove}>✕</Text>
+                <View key={i} style={styles.docPill}>
+                  <View style={styles.docIconBox}>
+                    <Image source={icFile} style={styles.docIconImg} />
+                  </View>
+                  <View style={styles.docMid}>
+                    <Text style={styles.docName} numberOfLines={1}>
+                      {f.name}
+                    </Text>
+                    <Text style={styles.docMeta} numberOfLines={1}>
+                      {(f.name.split('.').pop() || 'FILE').toUpperCase()}
+                      {f.size ? ` · ${formatFileSize(f.size)}` : ''}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.docRemoveBtn}
+                    onPress={remove}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Text style={styles.docRemoveText}>✕</Text>
                   </TouchableOpacity>
                 </View>
               );
@@ -1340,13 +1299,8 @@ export const ChatScreen = ({ navigation, route }: AppScreenProps<'Chat'>) => {
                 activeOpacity={0.9}
                 style={styles.sendBtn}
                 onPress={stopVoiceAndSend}
-                disabled={uploading}
               >
-                {uploading ? (
-                  <ActivityIndicator size="small" color={appColors.white} />
-                ) : (
-                  <Image source={icSend} style={styles.sendIcon} />
-                )}
+                <Image source={icSend} style={styles.sendIcon} />
               </TouchableOpacity>
             </>
           ) : (
@@ -1356,7 +1310,6 @@ export const ChatScreen = ({ navigation, route }: AppScreenProps<'Chat'>) => {
                   style={styles.attachBtn}
                   activeOpacity={0.8}
                   onPress={() => setAttachOpen(true)}
-                  disabled={uploading}
                 >
                   <Text style={styles.attachIcon}>＋</Text>
                 </TouchableOpacity>
@@ -1373,14 +1326,9 @@ export const ChatScreen = ({ navigation, route }: AppScreenProps<'Chat'>) => {
                 <TouchableOpacity
                   activeOpacity={0.9}
                   style={styles.sendBtn}
-                  disabled={uploading}
                   onPress={onSend}
                 >
-                  {uploading ? (
-                    <ActivityIndicator size="small" color={appColors.white} />
-                  ) : (
-                    <Image source={icSend} style={styles.sendIcon} />
-                  )}
+                  <Image source={icSend} style={styles.sendIcon} />
                 </TouchableOpacity>
               ) : (
                 // Mic button (WhatsApp-style) when there's nothing to send.
@@ -1388,7 +1336,6 @@ export const ChatScreen = ({ navigation, route }: AppScreenProps<'Chat'>) => {
                   activeOpacity={0.85}
                   style={styles.sendBtn}
                   onPress={startVoice}
-                  disabled={uploading}
                 >
                   <View style={styles.micGlyph}>
                     <View style={styles.micBody} />
@@ -1482,90 +1429,6 @@ export const ChatScreen = ({ navigation, route }: AppScreenProps<'Chat'>) => {
         onClose={() => setAttachOpen(false)}
         onSelect={onAttachSelect}
       />
-
-      {/* Property picker — share properties from search history as cards */}
-      <Modal
-        visible={propertyOpen}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setPropertyOpen(false)}
-      >
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={() => setPropertyOpen(false)}
-        >
-          <Pressable style={styles.actionSheet}>
-            <View style={styles.propSheetHead}>
-              <Text style={styles.contactSheetTitle}>Share property</Text>
-              <Text style={styles.propSheetHint}>Select up to 2</Text>
-            </View>
-            {loadingProperties ? (
-              <ActivityIndicator
-                color={appColors.maroon}
-                style={{ marginVertical: scaleWidth(20) }}
-              />
-            ) : properties.length === 0 ? (
-              <Text style={styles.contactEmpty}>No properties found.</Text>
-            ) : (
-              <FlatList
-                data={properties}
-                keyExtractor={p => p.id}
-                style={{ maxHeight: scaleWidth(360) }}
-                keyboardShouldPersistTaps="handled"
-                renderItem={({ item }) => {
-                  const selected = selectedPropIds.includes(item.id);
-                  return (
-                    <TouchableOpacity
-                      style={styles.contactRow}
-                      activeOpacity={0.8}
-                      onPress={() => togglePropSelect(item.id)}
-                    >
-                      <View style={styles.propRowIcon}>
-                        <Image source={icPin} style={styles.propRowPin} />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.contactName} numberOfLines={1}>
-                          {item.address}
-                        </Text>
-                        {item.when ? (
-                          <Text style={styles.contactSub} numberOfLines={1}>
-                            {item.when}
-                          </Text>
-                        ) : null}
-                      </View>
-                      <View
-                        style={[
-                          styles.propCheck,
-                          selected && styles.propCheckOn,
-                        ]}
-                      >
-                        {selected ? (
-                          <Text style={styles.propCheckMark}>✓</Text>
-                        ) : null}
-                      </View>
-                    </TouchableOpacity>
-                  );
-                }}
-              />
-            )}
-            <TouchableOpacity
-              style={[
-                styles.propShareBtn,
-                selectedPropIds.length === 0 && styles.propShareBtnOff,
-              ]}
-              disabled={selectedPropIds.length === 0}
-              activeOpacity={0.9}
-              onPress={shareSelectedProperties}
-            >
-              <Text style={styles.propShareText}>
-                {selectedPropIds.length
-                  ? `Share ${selectedPropIds.length}`
-                  : 'Share'}
-              </Text>
-            </TouchableOpacity>
-          </Pressable>
-        </Pressable>
-      </Modal>
 
       {/* Who reacted (tap a reaction chip) */}
       <Modal
@@ -1786,6 +1649,17 @@ const styles = StyleSheet.create({
     marginBottom: scaleWidth(6),
     backgroundColor: 'rgba(0,0,0,0.05)',
   },
+  uploadOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: scaleWidth(6),
+    borderRadius: scaleWidth(10),
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   // Shared-location card (WhatsApp-style: map preview + address footer).
   locCard: {
     width: scaleWidth(210),
@@ -1824,103 +1698,6 @@ const styles = StyleSheet.create({
   },
   locTitle: { ...typography(700, 13.5, 'coffeeDark'), fontWeight: '700' },
   locCoords: { ...typography('regular', 11.5, 'gray') },
-  // Shared-property card
-  propCard: {
-    width: scaleWidth(240),
-    borderRadius: scaleWidth(14),
-    backgroundColor: appColors.white,
-    padding: scaleWidth(10),
-    marginBottom: scaleWidth(4),
-  },
-  propTop: { flexDirection: 'row', alignItems: 'center' },
-  propIconTile: {
-    width: scaleWidth(44),
-    height: scaleWidth(44),
-    borderRadius: scaleWidth(12),
-    backgroundColor: 'rgba(94,23,23,0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: scaleWidth(10),
-  },
-  propPin: {
-    width: scaleWidth(22),
-    height: scaleWidth(22),
-    tintColor: appColors.maroon,
-    resizeMode: 'contain',
-  },
-  propTitle: { ...typography(700, 14.5, 'coffeeDark'), fontWeight: '700' },
-  propSub: {
-    ...typography('regular', 12, 'gray'),
-    marginTop: scaleWidth(2),
-  },
-  propDist: {
-    ...typography(700, 12.5, 'maroon'),
-    fontWeight: '700',
-    marginLeft: scaleWidth(8),
-  },
-  propMapBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: scaleWidth(10),
-    paddingVertical: scaleWidth(9),
-    borderRadius: scaleWidth(10),
-    backgroundColor: 'rgba(94,23,23,0.06)',
-  },
-  propMapIcon: {
-    width: scaleWidth(15),
-    height: scaleWidth(15),
-    tintColor: appColors.maroon,
-    resizeMode: 'contain',
-    marginRight: scaleWidth(6),
-  },
-  propMapText: { ...typography(700, 13, 'maroon'), fontWeight: '700' },
-  // Share-property picker sheet
-  propSheetHead: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  propSheetHint: { ...typography('regular', 12, 'gray') },
-  propRowIcon: {
-    width: scaleWidth(40),
-    height: scaleWidth(40),
-    borderRadius: scaleWidth(10),
-    backgroundColor: 'rgba(94,23,23,0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: scaleWidth(12),
-  },
-  propRowPin: {
-    width: scaleWidth(20),
-    height: scaleWidth(20),
-    tintColor: appColors.maroon,
-    resizeMode: 'contain',
-  },
-  propCheck: {
-    width: scaleWidth(24),
-    height: scaleWidth(24),
-    borderRadius: scaleWidth(12),
-    borderWidth: 1.6,
-    borderColor: appColors.gray,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: scaleWidth(8),
-  },
-  propCheckOn: {
-    backgroundColor: appColors.maroon,
-    borderColor: appColors.maroon,
-  },
-  propCheckMark: { ...typography(700, 13, 'white'), fontWeight: '700' },
-  propShareBtn: {
-    marginTop: scaleWidth(12),
-    paddingVertical: scaleWidth(13),
-    borderRadius: scaleWidth(14),
-    backgroundColor: appColors.maroon,
-    alignItems: 'center',
-  },
-  propShareBtnOff: { backgroundColor: 'rgba(94,23,23,0.35)' },
-  propShareText: { ...typography(700, 15, 'white'), fontWeight: '700' },
   fileChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2060,6 +1837,51 @@ const styles = StyleSheet.create({
   attachThumbRemoveText: {
     ...typography(700, 10, 'white'),
     lineHeight: scaleWidth(12),
+  },
+  // Pending document card
+  docPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    maxWidth: scaleWidth(250),
+    backgroundColor: appColors.white,
+    borderRadius: scaleWidth(12),
+    borderWidth: 1,
+    borderColor: 'rgba(94,23,23,0.12)',
+    paddingVertical: scaleWidth(7),
+    paddingHorizontal: scaleWidth(8),
+    gap: scaleWidth(9),
+  },
+  docIconBox: {
+    width: scaleWidth(36),
+    height: scaleWidth(36),
+    borderRadius: scaleWidth(9),
+    backgroundColor: 'rgba(94,23,23,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  docIconImg: {
+    width: scaleWidth(18),
+    height: scaleWidth(18),
+    tintColor: appColors.maroon,
+    resizeMode: 'contain',
+  },
+  docMid: { flexShrink: 1 },
+  docName: { ...typography(600, 13, 'coffeeDark'), fontWeight: '600' },
+  docMeta: {
+    ...typography('regular', 11, 'gray'),
+    marginTop: scaleWidth(1),
+  },
+  docRemoveBtn: {
+    width: scaleWidth(20),
+    height: scaleWidth(20),
+    borderRadius: scaleWidth(10),
+    backgroundColor: 'rgba(94,23,23,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  docRemoveText: {
+    ...typography(700, 11, 'maroon'),
+    lineHeight: scaleWidth(13),
   },
   composer: {
     flexDirection: 'row',

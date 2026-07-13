@@ -27,6 +27,7 @@ import {
 } from '../../slices';
 import {Avatar} from '../../components/Avatar';
 import {userImageUrl} from '../../utils/chat';
+import {seedCachedImageUri} from '../../utils/imageCache';
 import {fetchChatContacts} from '../../api/contacts.api';
 import {
   wsAddGroupMember,
@@ -116,6 +117,10 @@ export const GroupInfoScreen = ({
       setLocalPhoto(file.uri); // instant preview
       setUploadingPhoto(true);
       const [uploaded] = await uploadAttachments([file]);
+      // Cache the local file under the S3 key so the group photo shows
+      // instantly in the conversation list (which keys avatars by image_key)
+      // without waiting for a signed download URL.
+      void seedCachedImageUri(uploaded.fileKey, file.uri);
       wsUpdateGroup({groupId, imageKey: uploaded.fileKey});
       dispatch(applyGroupUpdated({groupId, image_key: uploaded.fileKey}));
     } catch (e) {
@@ -212,6 +217,7 @@ export const GroupInfoScreen = ({
                   id={`g${conversationId}`}
                   imageUrl={groupImage}
                   cacheKey={conv?.group?.image_key ?? undefined}
+                  group
                   size={scaleWidth(88)}
                 />
               )}

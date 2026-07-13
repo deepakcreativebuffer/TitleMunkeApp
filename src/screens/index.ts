@@ -14,6 +14,7 @@ export {NewGroupScreen} from './Messages/NewGroupScreen';
 export {GroupInfoScreen} from './Messages/GroupInfoScreen';
 export {ContactInfoScreen} from './Messages/ContactInfoScreen';
 export {DocumentViewerScreen} from './Messages/DocumentViewerScreen';
+export {WebPageScreen} from './WebPage/WebPageScreen';
 // NOTE: SearchMapScreen is intentionally NOT re-exported here. It pulls in
 // react-native-maps, whose native module would otherwise load at app startup
 // and crash the whole app on a binary that wasn't rebuilt with the pod. It is
