@@ -268,7 +268,7 @@ export const SettingsScreen = () => {
             onPress={() =>
               navigation.navigate('WebPage', {
                 title: 'Privacy Policy',
-                url: 'https://staging.d1n4t6s0drx6o.amplifyapp.com/privacy-policy',
+                url: 'https://titlemunke.com/privacy-policy',
               })
             }
           />
@@ -279,7 +279,7 @@ export const SettingsScreen = () => {
             onPress={() =>
               navigation.navigate('WebPage', {
                 title: 'Terms and Conditions',
-                url: 'https://staging.d1n4t6s0drx6o.amplifyapp.com/terms-and-conditions',
+                url: 'https://titlemunke.com/terms-and-conditions',
               })
             }
           />
