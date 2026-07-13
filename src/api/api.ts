@@ -1,9 +1,9 @@
 import axios from 'axios';
-import {store} from '../store';
-import {API_BASE_URL} from '../static';
-import {refreshCognitoTokens} from './cognito';
-import {tokensRefreshed, logout} from '../slices/user.slice';
-import {decodeJwt} from '../utils';
+import { store } from '../store';
+import { API_BASE_URL } from '../static';
+import { refreshCognitoTokens } from './cognito';
+import { tokensRefreshed, logout } from '../slices/user.slice';
+import { decodeJwt } from '../utils';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -19,7 +19,7 @@ api.interceptors.request.use(
     const user = store.getState()?.user;
     const token = user?.token; // Cognito ID token
     const accessToken = user?.accessToken;
-
+    console.log('token', token);
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -49,7 +49,7 @@ api.interceptors.response.use(
       // clientId may be missing on sessions created before it was persisted —
       // derive it from the current ID token's `aud` claim as a fallback.
       const clientId =
-        user?.clientId ?? decodeJwt<{aud?: string}>(user?.token)?.aud ?? null;
+        user?.clientId ?? decodeJwt<{ aud?: string }>(user?.token)?.aud ?? null;
 
       if (clientId && refreshToken) {
         if (!refreshPromise) {

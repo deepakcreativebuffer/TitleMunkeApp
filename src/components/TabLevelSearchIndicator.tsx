@@ -19,6 +19,10 @@ const HIDDEN_ROUTES = [
   'Messages',
   'Chat',
   'NewChat',
+  'NewGroup',
+  'GroupInfo',
+  'ContactInfo',
+  'DocumentViewer',
 ];
 
 // Active top-level route ('TabNavigator' when the floating tab bar is on screen).

@@ -4,6 +4,7 @@ import {AppNavigator} from './AppNavigator';
 import {navigationRef} from './navigationRef';
 import {DrawerProvider} from '../context/DrawerContext';
 import {SearchManager} from '../components/SearchManager';
+import {MessagingManager} from '../components/MessagingManager';
 import {LiveActivityManager} from '../components/LiveActivityManager';
 import {AIChatBot} from '../components/AIChatBot';
 import {AuthGate} from '../components/AuthGate';
@@ -28,6 +29,7 @@ export const RootStackNavigator = () =>{
       <AppNavigator />
     </DrawerProvider>
     <SearchManager />
+    <MessagingManager />
     <LiveActivityManager />
     <TabLevelSearchIndicator/>
     <AIChatBot />

@@ -67,6 +67,13 @@ export const AppNavigator = () => (
     <Stack.Screen name="Messages" component={Screens.ConversationListScreen} />
     <Stack.Screen name="Chat" component={Screens.ChatScreen} />
     <Stack.Screen name="NewChat" component={Screens.NewChatScreen} />
+    <Stack.Screen name="NewGroup" component={Screens.NewGroupScreen} />
+    <Stack.Screen name="GroupInfo" component={Screens.GroupInfoScreen} />
+    <Stack.Screen name="ContactInfo" component={Screens.ContactInfoScreen} />
+    <Stack.Screen
+      name="DocumentViewer"
+      component={Screens.DocumentViewerScreen}
+    />
     <Stack.Screen name="Agents" component={Screens.AgentsScreen} />
     <Stack.Screen name="AddAgent" component={Screens.AddAgentScreen} />
     <Stack.Screen
@@ -87,6 +94,8 @@ export const AppNavigator = () => (
       component={Screens.AdvancedSettingsScreen}
     />
     <Stack.Screen name="Search" component={Screens.SearchScreen} />
+    <Stack.Screen name="Requests" component={Screens.RequestsScreen} />
+    <Stack.Screen name="Settings" component={Screens.SettingsScreen} />
     <Stack.Screen name="Logs" component={Screens.LogsScreen} />
     <Stack.Screen name="OrgUsers" component={Screens.OrgUsersScreen} />
     <Stack.Screen name="AdminUsers" component={Screens.AdminUsersScreen} />

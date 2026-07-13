@@ -27,8 +27,6 @@ const icFile = require('../assets/images/ic-file.png');
 const icList = require('../assets/images/ic-list.png');
 const icSettings = require('../assets/images/ic-settings.png');
 const icSearch = require('../assets/images/ic-search.png');
-const icPin = require('../assets/images/ic-pin.png');
-const icMessage = require('../assets/images/ic-message.png');
 const icLogout = require('../assets/images/ic-logout.png');
 
 const PANEL_W = Math.min(scaleWidth(300), SCREEN_WIDTH * 0.82);
@@ -42,46 +40,35 @@ type Item = {
   badge?: boolean; // show the messaging unread count
 };
 
-const MESSAGES_ITEM: Item = {
-  key: 'Messages',
-  label: 'Messages',
-  icon: icMessage,
-  rootRoute: 'Messages',
-  badge: true,
-};
-
+// Messages + Nearby Search now live in the bottom tab bar, so they're not in
+// the drawer. Requests + Settings moved out of the tab bar into the drawer
+// (reached as top-level stack routes).
 const ITEMS: Item[] = [
   {key: 'Dashboard', label: 'Dashboard', icon: icHome, route: 'Home'},
-  {key: 'NearbySearch', label: 'Nearby Search', icon: icPin, rootRoute: 'NearbySearch'},
-  MESSAGES_ITEM,
-  {key: 'Requests', label: 'Requests', icon: icFile, route: 'Requests'},
   {key: 'Agents', label: 'Agents', icon: icPeople, rootRoute: 'Agents'},
+  {key: 'Requests', label: 'Requests', icon: icFile, rootRoute: 'Requests'},
   {key: 'Logs', label: 'Audit Logs', icon: icList, rootRoute: 'Logs'},
-  {key: 'Settings', label: 'Settings', icon: icSettings, route: 'Settings'},
+  {key: 'Settings', label: 'Settings', icon: icSettings, rootRoute: 'Settings'},
 ];
 
 // Organisations have Search + Users instead of Agents.
 const ORG_ITEMS: Item[] = [
   {key: 'Dashboard', label: 'Dashboard', icon: icHome, route: 'Home'},
   {key: 'Search', label: 'Search', icon: icSearch, rootRoute: 'Search'},
-  {key: 'NearbySearch', label: 'Nearby Search', icon: icPin, rootRoute: 'NearbySearch'},
-  MESSAGES_ITEM,
-  {key: 'Requests', label: 'Requests', icon: icFile, route: 'Requests'},
+  {key: 'Requests', label: 'Requests', icon: icFile, rootRoute: 'Requests'},
   {key: 'Users', label: 'Users', icon: icPeople, rootRoute: 'OrgUsers'},
   {key: 'Logs', label: 'Audit Logs', icon: icList, rootRoute: 'Logs'},
-  {key: 'Settings', label: 'Settings', icon: icSettings, route: 'Settings'},
+  {key: 'Settings', label: 'Settings', icon: icSettings, rootRoute: 'Settings'},
 ];
 
-// Admins have Search + Demo Requests + Users (4 tabs) + Audit Logs.
+// Admins have Search + Demo Requests + Users + Audit Logs.
 const ADMIN_ITEMS: Item[] = [
   {key: 'Dashboard', label: 'Dashboard', icon: icHome, route: 'Home'},
   {key: 'Search', label: 'Search', icon: icSearch, rootRoute: 'Search'},
-  {key: 'NearbySearch', label: 'Nearby Search', icon: icPin, rootRoute: 'NearbySearch'},
-  MESSAGES_ITEM,
-  {key: 'Requests', label: 'Demo Requests', icon: icFile, route: 'Requests'},
+  {key: 'Requests', label: 'Demo Requests', icon: icFile, rootRoute: 'Requests'},
   {key: 'Users', label: 'Users', icon: icPeople, rootRoute: 'AdminUsers'},
   {key: 'Logs', label: 'Audit Logs', icon: icList, rootRoute: 'Logs'},
-  {key: 'Settings', label: 'Settings', icon: icSettings, route: 'Settings'},
+  {key: 'Settings', label: 'Settings', icon: icSettings, rootRoute: 'Settings'},
 ];
 
 const routeToKey = (name?: string): string => {
@@ -134,9 +121,9 @@ export const AppDrawer = ({
   const activeKey = routeToKey(
     navigationRef.isReady() ? navigationRef.getCurrentRoute()?.name : undefined,
   );
-  // Mock messaging unread total for the menu badge (read on open).
+  // Messaging unread total for the menu badge (read on open).
   const unreadTotal = (store.getState().messaging?.conversations ?? []).reduce(
-    (sum: number, c: {unreadCount: number}) => sum + c.unreadCount,
+    (sum: number, c: {unreadCount?: number}) => sum + (c.unreadCount ?? 0),
     0,
   );
 

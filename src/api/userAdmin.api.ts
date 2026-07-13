@@ -49,6 +49,23 @@ export const listSearchHistories = (params: {
   toDatetime?: string;
 }) => get('/list-search-histories', params);
 
+// Properties near a coordinate. Body: { lat, lng, radiusMeters, limit,
+// nextToken }. radiusMeters defaults to 10km on the backend.
+export const getNearbySearchProperties = (params: {
+  lat: number;
+  lng: number;
+  radiusMeters?: number;
+  limit?: number;
+  nextToken?: string | null;
+}) =>
+  post('/get-nearby-search-properties', {
+    lat: params.lat,
+    lng: params.lng,
+    radiusMeters: params.radiusMeters ?? 10000,
+    ...(params.limit != null ? {limit: params.limit} : {}),
+    ...(params.nextToken ? {nextToken: params.nextToken} : {}),
+  });
+
 /* ------------------------------- Admin -------------------------------- */
 
 // Admin dashboard KPIs + revenue (Total Org/Brokers/Agents/Counties/Demo).

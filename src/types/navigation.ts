@@ -27,8 +27,27 @@ export type AppStackParamList = {
     title?: string;
   };
   Messages: undefined;
-  Chat: {participantId: string};
+  Chat: {
+    // Existing conversation (from the list / groups). Absent for a brand-new
+    // 1-1 chat, where `toUserId` is provided instead and the conversation is
+    // created on the first message.
+    conversationId?: number;
+    toUserId?: number;
+    title?: string;
+    isGroup?: boolean;
+    groupId?: number;
+  };
   NewChat: undefined;
+  NewGroup: undefined;
+  GroupInfo: {conversationId: number; groupId: number; title?: string};
+  ContactInfo: {conversationId: number; title?: string};
+  DocumentViewer: {
+    url: string;
+    name?: string;
+    type?: string;
+    fileKey?: string;
+    isImage?: boolean;
+  };
   Agents: undefined;
   AddAgent: {agent?: AgentFormParam} | undefined;
   EditProfile: undefined;
@@ -40,6 +59,8 @@ export type AppStackParamList = {
   OrgDetails: {orgId: string; name?: string};
   AdminBrokerDetails: {brokerId: string; name?: string};
   Search: undefined;
+  Requests: undefined;
+  Settings: undefined;
   Logs: undefined;
   OrgUsers: undefined;
   AdminUsers: undefined;

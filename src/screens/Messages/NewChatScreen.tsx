@@ -1,4 +1,4 @@
-import React, {useMemo, useState} from 'react';
+import React, {useEffect, useMemo, useState} from 'react';
 import {
   View,
   Text,
@@ -9,39 +9,56 @@ import {
   TouchableOpacity,
   ScrollView,
   StatusBar,
+  ActivityIndicator,
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {appColors, typography, scaleWidth} from '../../global';
-import {AppScreenProps} from '../../types';
+import {AppScreenProps, ChatContact} from '../../types';
 import {useAppSelector} from '../../store';
-import {messagingUsersSelector} from '../../slices';
+import {userProfileSelector, userRoleSelector} from '../../slices';
 import {Avatar} from '../../components/Avatar';
+import {fetchChatContacts, canCreateGroups} from '../../api/contacts.api';
 
 const gridBg = require('../../assets/images/grid-bg.png');
 const icChevron = require('../../assets/images/ic-chevron.png');
 const icSearch = require('../../assets/images/ic-search.png');
+const icPeople = require('../../assets/images/ic-people.png');
 
 export const NewChatScreen = ({navigation}: AppScreenProps<'NewChat'>) => {
   const insets = useSafeAreaInsets();
-  const users = useAppSelector(messagingUsersSelector);
+  const role = useAppSelector(userRoleSelector);
+  const profile = useAppSelector(userProfileSelector);
+  const [contacts, setContacts] = useState<ChatContact[]>([]);
+  const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
-  const q = query.trim().toLowerCase();
 
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    fetchChatContacts(role, profile)
+      .then(list => alive && setContacts(list))
+      .finally(() => alive && setLoading(false));
+    return () => {
+      alive = false;
+    };
+  }, [role, profile]);
+
+  const q = query.trim().toLowerCase();
   const filtered = useMemo(() => {
     if (!q) {
-      return users;
+      return contacts;
     }
-    return users.filter(
-      u =>
-        u.name.toLowerCase().includes(q) ||
-        u.email.toLowerCase().includes(q) ||
-        u.username.toLowerCase().includes(q),
+    return contacts.filter(
+      c =>
+        c.name.toLowerCase().includes(q) ||
+        (c.email ?? '').toLowerCase().includes(q),
     );
-  }, [users, q]);
+  }, [contacts, q]);
 
-  const start = (participantId: string) =>
-    // Replace so back from the chat returns to the conversation list.
-    navigation.replace('Chat', {participantId});
+  const start = (c: ChatContact) =>
+    // Replace so back from the chat returns to the conversation list. The
+    // conversation is created server-side on the first message.
+    navigation.replace('Chat', {toUserId: c.id, title: c.name});
 
   return (
     <ImageBackground source={gridBg} resizeMode="cover" style={styles.bg}>
@@ -71,7 +88,6 @@ export const NewChatScreen = ({navigation}: AppScreenProps<'NewChat'>) => {
             placeholder="Search people…"
             placeholderTextColor={appColors.gray}
             autoCapitalize="none"
-            autoFocus
           />
         </View>
 
@@ -81,31 +97,62 @@ export const NewChatScreen = ({navigation}: AppScreenProps<'NewChat'>) => {
           contentContainerStyle={{
             paddingHorizontal: scaleWidth(20),
             paddingBottom: insets.bottom + scaleWidth(40),
+            flexGrow: 1,
           }}>
-          {filtered.map(u => (
+          {/* New group action (roles allowed to create groups) */}
+          {canCreateGroups(role) && !query ? (
             <TouchableOpacity
-              key={u.id}
               activeOpacity={0.85}
-              style={styles.card}
-              onPress={() => start(u.id)}>
-              <Avatar
-                name={u.name}
-                id={u.id}
-                online={u.status === 'online'}
-              />
-              <View style={styles.mid}>
-                <Text style={styles.name} numberOfLines={1}>
-                  {u.name}
-                </Text>
-                <Text style={styles.sub} numberOfLines={1}>
-                  @{u.username} · {u.email}
+              style={styles.actionRow}
+              onPress={() => navigation.replace('NewGroup')}>
+              <View style={styles.actionIcon}>
+                <Image source={icPeople} style={styles.actionIconImg} />
+              </View>
+              <View style={styles.actionMid}>
+                <Text style={styles.actionLabel}>New group</Text>
+                <Text style={styles.actionSub}>
+                  Start a group conversation
                 </Text>
               </View>
+              <Image source={icChevron} style={styles.actionChevron} />
             </TouchableOpacity>
-          ))}
-          {filtered.length === 0 ? (
-            <Text style={styles.noResults}>No people match “{query}”.</Text>
           ) : null}
+
+          {!query ? (
+            <Text style={styles.sectionLabel}>CONTACTS</Text>
+          ) : null}
+
+          {loading ? (
+            <ActivityIndicator
+              color={appColors.maroon}
+              style={{marginTop: scaleWidth(40)}}
+            />
+          ) : filtered.length === 0 ? (
+            <Text style={styles.noResults}>
+              {contacts.length === 0
+                ? 'No contacts available to message.'
+                : `No people match “${query}”.`}
+            </Text>
+          ) : (
+            filtered.map(c => (
+              <TouchableOpacity
+                key={c.id}
+                activeOpacity={0.85}
+                style={styles.card}
+                onPress={() => start(c)}>
+                <Avatar name={c.name} id={`u${c.id}`} />
+                <View style={styles.mid}>
+                  <Text style={styles.name} numberOfLines={1}>
+                    {c.name}
+                  </Text>
+                  <Text style={styles.sub} numberOfLines={1}>
+                    {c.role ? `${c.role} · ` : ''}
+                    {c.email ?? ''}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ))
+          )}
         </ScrollView>
       </View>
     </ImageBackground>
@@ -173,6 +220,45 @@ const styles = StyleSheet.create({
     padding: scaleWidth(12),
     marginBottom: scaleWidth(10),
     ...shadow,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: appColors.white,
+    borderRadius: scaleWidth(16),
+    padding: scaleWidth(12),
+    marginBottom: scaleWidth(12),
+    ...shadow,
+  },
+  actionIcon: {
+    width: scaleWidth(46),
+    height: scaleWidth(46),
+    borderRadius: scaleWidth(23),
+    backgroundColor: appColors.maroon,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionIconImg: {
+    width: scaleWidth(22),
+    height: scaleWidth(22),
+    tintColor: appColors.white,
+  },
+  actionMid: {flex: 1, marginLeft: scaleWidth(12)},
+  actionLabel: {...typography(700, 15, 'coffeeDark'), fontWeight: '700'},
+  actionSub: {
+    ...typography('regular', 12, 'gray'),
+    marginTop: scaleWidth(2),
+  },
+  actionChevron: {
+    width: scaleWidth(16),
+    height: scaleWidth(16),
+    tintColor: appColors.gray,
+  },
+  sectionLabel: {
+    ...typography(600, 11, 'gray'),
+    letterSpacing: 1,
+    fontWeight: '600',
+    marginBottom: scaleWidth(10),
   },
   mid: {flex: 1, marginLeft: scaleWidth(12)},
   name: {...typography(700, 15, 'coffeeDark'), fontWeight: '700'},

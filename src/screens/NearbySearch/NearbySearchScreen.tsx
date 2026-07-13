@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useState} from 'react';
 import {
   View,
   Text,
@@ -13,15 +13,19 @@ import {
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {appColors, typography, scaleWidth} from '../../global';
 import {AppScreenProps} from '../../types';
-import {NEARBY_PROPERTIES, NearbyProperty} from '../../data/nearbyProperties';
+import {useDrawer} from '../../context/DrawerContext';
+import {NearbyProperty} from '../../data/nearbyProperties';
 import {RadiusSlider} from '../../components/RadiusSlider';
 import {useAppSelector} from '../../store';
 import {userProfileSelector, userRoleSelector} from '../../slices';
-import {listSearchHistories} from '../../api/userAdmin.api';
+import {
+  getNearbySearchProperties,
+  listSearchHistories,
+} from '../../api/userAdmin.api';
 import {geocodeMany} from '../../api/geocode';
 
 const gridBg = require('../../assets/images/grid-bg.png');
-const icChevron = require('../../assets/images/ic-chevron.png');
+const icMenu = require('../../assets/images/ic-menu.png');
 const icPin = require('../../assets/images/ic-pin.png');
 
 const RADIUS_OPTIONS = [5, 10, 20, 50, 100];
@@ -45,10 +49,43 @@ const haversineKm = (
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 };
 
+// Map a raw property from /get-nearby-search-properties into a NearbyProperty.
+// The backend shape is read defensively (snake/camel case + nested variants).
+// Distance is computed from the search origin so it stays consistent with the
+// KM display regardless of what the API returns. A searchId makes the entry
+// report-linkable on the map.
+const toNearbyProperty = (it: any, idx: number): NearbyProperty | null => {
+  const latitude = Number(it?.latitude ?? it?.lat ?? it?.location?.lat);
+  const longitude = Number(
+    it?.longitude ?? it?.lng ?? it?.lon ?? it?.long ?? it?.location?.lng,
+  );
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return null;
+  }
+  const address =
+    it?.address ?? it?.property_address ?? it?.addressName ?? it?.name ?? '';
+  const searchId = it?.searchId ?? it?.search_id ?? undefined;
+  return {
+    id: `api-${searchId ?? it?.id ?? idx}`,
+    addressName: address || 'Property',
+    area: it?.area ?? it?.city ?? it?.county ?? 'Nearby property',
+    distance:
+      Math.round(
+        haversineKm(ORIGIN.latitude, ORIGIN.longitude, latitude, longitude) *
+          10,
+      ) / 10,
+    latitude,
+    longitude,
+    ...(address ? {address} : {}),
+    ...(searchId ? {searchId} : {}),
+  };
+};
+
 export const NearbySearchScreen = ({
   navigation,
 }: AppScreenProps<'NearbySearch'>) => {
   const insets = useSafeAreaInsets();
+  const {openDrawer} = useDrawer();
   const profile = useAppSelector(userProfileSelector);
   const role = useAppSelector(userRoleSelector);
   const userId = profile?.sub;
@@ -58,7 +95,6 @@ export const NearbySearchScreen = ({
   const [results, setResults] = useState<NearbyProperty[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
   const [realProps, setRealProps] = useState<NearbyProperty[]>([]);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Pull a few of the user's actual completed searches (real searchId +
   // address) and geocode them, so they appear as real, redirectable properties.
@@ -125,17 +161,33 @@ export const NearbySearchScreen = ({
     };
   }, [userId, role]);
 
-  const onFind = useCallback(() => {
+  const onFind = useCallback(async () => {
     setLoading(true);
     setHasSearched(true);
-    if (timer.current) {
-      clearTimeout(timer.current);
-    }
-    // Merge the user's real searches with the mock discovery data, de-duplicate
-    // by address (preferring entries that carry a real searchId), then filter.
-    timer.current = setTimeout(() => {
+    try {
+      // Ask the backend for properties within the chosen radius of the search
+      // origin (radius is in KM in the UI, the API expects metres).
+      const res: any = await getNearbySearchProperties({
+        lat: ORIGIN.latitude,
+        lng: ORIGIN.longitude,
+        radiusMeters: radius * 1000,
+        limit: 50,
+      });
+      const items: any[] =
+        res?.data?.items ??
+        res?.items ??
+        res?.properties ??
+        res?.data?.properties ??
+        (Array.isArray(res) ? res : []);
+      const apiProps = items
+        .map(toNearbyProperty)
+        .filter((p): p is NearbyProperty => p !== null);
+
+      // Merge the user's real searches with the API results, de-duplicate by
+      // address (preferring entries that carry a real searchId), then filter
+      // by radius as a client-side guard and sort nearest-first.
       const byAddr = new Map<string, NearbyProperty>();
-      [...realProps, ...NEARBY_PROPERTIES].forEach(p => {
+      [...realProps, ...apiProps].forEach(p => {
         const key = (p.address ?? p.addressName).toLowerCase().trim();
         const existing = byAddr.get(key);
         if (!existing || (!existing.searchId && p.searchId)) {
@@ -146,8 +198,12 @@ export const NearbySearchScreen = ({
         .filter(p => p.distance <= radius)
         .sort((a, b) => a.distance - b.distance);
       setResults(found);
+    } catch {
+      // Network/backend failure — show the empty state rather than stale data.
+      setResults([]);
+    } finally {
       setLoading(false);
-    }, 1200);
+    }
   }, [radius, realProps]);
 
   return (
@@ -169,8 +225,8 @@ export const NearbySearchScreen = ({
           <TouchableOpacity
             style={styles.iconBtn}
             activeOpacity={0.8}
-            onPress={() => navigation.goBack()}>
-            <Image source={icChevron} style={styles.backIcon} />
+            onPress={openDrawer}>
+            <Image source={icMenu} style={styles.backIcon} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Nearby Search</Text>
           <TouchableOpacity

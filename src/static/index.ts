@@ -30,3 +30,8 @@ export const LLM_API_URL =
 // AI chatbot "Munke Assist" Lambda (web's VITE_CHAT_API_URL).
 export const CHAT_API_URL =
   'https://quhlojc2zcr5ysnwbz2oljrshi0zmmlk.lambda-url.us-east-1.on.aws/';
+
+// Realtime messaging WebSocket (titlemunke-websocket-<stage>). The Cognito ID
+// token is appended as ?token=<idToken> on connect (see websocketAuthorizer).
+export const WEBSOCKET_URL =
+  'wss://b6v3hk95me.execute-api.us-east-1.amazonaws.com/staging';

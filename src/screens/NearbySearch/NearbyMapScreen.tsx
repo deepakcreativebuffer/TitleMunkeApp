@@ -9,7 +9,6 @@ import {
   Platform,
 } from 'react-native';
 import MapView, {
-  Marker,
   Callout,
   PROVIDER_GOOGLE,
   PROVIDER_DEFAULT,
@@ -19,6 +18,7 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {appColors, typography, scaleWidth} from '../../global';
 import {AppScreenProps} from '../../types';
 import {NearbyProperty} from '../../data/nearbyProperties';
+import {LogoMarker} from '../../components/LogoMarker';
 
 const icChevron = require('../../assets/images/ic-chevron.png');
 
@@ -95,13 +95,10 @@ export const NearbyMapScreen = ({
           // (otherwise the report would load blank).
           const real = !!p.searchId;
           return (
-            <Marker
+            <LogoMarker
               key={p.id}
               coordinate={{latitude: p.latitude, longitude: p.longitude}}
-              pinColor={real ? appColors.success : appColors.maroon}
-              title={p.addressName}
-              description={p.area}
-              onCalloutPress={real ? () => openDetail(p) : undefined}>
+              onPress={real ? () => openDetail(p) : undefined}>
               <Callout onPress={real ? () => openDetail(p) : undefined}>
                 <View style={styles.callout}>
                   <Text style={styles.calloutTitle} numberOfLines={2}>
@@ -117,7 +114,7 @@ export const NearbyMapScreen = ({
                   ) : null}
                 </View>
               </Callout>
-            </Marker>
+            </LogoMarker>
           );
         })}
       </MapView>

@@ -41,6 +41,10 @@ const HIDDEN_ROUTES = [
   'Messages',
   'Chat',
   'NewChat',
+  'NewGroup',
+  'GroupInfo',
+  'ContactInfo',
+  'DocumentViewer',
 ];
 
 // Active TOP-LEVEL route name ('TabNavigator', 'NearbySearch', 'LoginScreen'…).

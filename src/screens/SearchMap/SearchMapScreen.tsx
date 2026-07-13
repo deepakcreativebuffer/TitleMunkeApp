@@ -10,7 +10,6 @@ import {
   Platform,
 } from 'react-native';
 import MapView, {
-  Marker,
   Callout,
   PROVIDER_GOOGLE,
   PROVIDER_DEFAULT,
@@ -20,7 +19,7 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {appColors, typography, scaleWidth} from '../../global';
 import {AppScreenProps} from '../../types';
 import {geocodeMany, LatLng} from '../../api/geocode';
-import {searchStatusMeta} from '../../utils';
+import {LogoMarker} from '../../components/LogoMarker';
 
 const icChevron = require('../../assets/images/ic-chevron.png');
 
@@ -39,6 +38,23 @@ const FALLBACK_REGION: Region = {
   latitudeDelta: 0.4,
   longitudeDelta: 0.4,
 };
+
+// Shared TitleMunke logo pin + this screen's report callout.
+const PinMarker = ({p, onOpen}: {p: Pin; onOpen: () => void}) => (
+  <LogoMarker
+    coordinate={{latitude: p.latitude, longitude: p.longitude}}
+    onPress={onOpen}>
+    <Callout onPress={onOpen}>
+      <View style={styles.callout}>
+        <Text style={styles.calloutTitle} numberOfLines={2}>
+          {p.address}
+        </Text>
+        {p.when ? <Text style={styles.calloutWhen}>{p.when}</Text> : null}
+        <Text style={styles.calloutLink}>View property details ›</Text>
+      </View>
+    </Callout>
+  </LogoMarker>
+);
 
 export const SearchMapScreen = ({
   navigation,
@@ -125,30 +141,9 @@ export const SearchMapScreen = ({
         style={StyleSheet.absoluteFill}
         provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : PROVIDER_DEFAULT}
         initialRegion={initialRegion}>
-        {pins.map(p => {
-          const meta = searchStatusMeta(p.status);
-          return (
-            <Marker
-              key={p.id}
-              coordinate={{latitude: p.latitude, longitude: p.longitude}}
-              pinColor={meta.color}
-              onCalloutPress={() => openReport(p)}>
-              <Callout onPress={() => openReport(p)}>
-                <View style={styles.callout}>
-                  <Text style={styles.calloutTitle} numberOfLines={2}>
-                    {p.address}
-                  </Text>
-                  {p.when ? (
-                    <Text style={styles.calloutWhen}>{p.when}</Text>
-                  ) : null}
-                  <Text style={styles.calloutLink}>
-                    View property details ›
-                  </Text>
-                </View>
-              </Callout>
-            </Marker>
-          );
-        })}
+        {pins.map(p => (
+          <PinMarker key={p.id} p={p} onOpen={() => openReport(p)} />
+        ))}
       </MapView>
 
       {/* Header overlay */}
