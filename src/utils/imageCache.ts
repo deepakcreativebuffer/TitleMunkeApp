@@ -98,3 +98,9 @@ export const getCachedImageUri = (
   inflight[fileKey] = task;
   return task;
 };
+
+// The cache is content-agnostic (keyed by the stable S3 file_key, whose
+// extension is preserved). These aliases make audio / PDF / other attachment
+// caching read clearly at the call site.
+export const getCachedFileUri = getCachedImageUri;
+export const peekCachedFileUri = peekCachedImageUri;

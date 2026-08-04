@@ -144,9 +144,25 @@ export const isMessageHiddenForMe = (
     return false;
   }
   if (m.deleted_scope === 'SENDER_ONLY') {
-    return m.sender_id === myUserId;
+    // "Delete for me" — hidden only for whoever deleted it.
+    const deletedBy = (m as WsMessage & {deleted_by?: number}).deleted_by;
+    return deletedBy != null ? deletedBy === myUserId : m.sender_id === myUserId;
   }
-  return true; // BOTH
+  // BOTH ("delete for everyone") → keep the row and show a WhatsApp-style
+  // "This message was deleted" placeholder on both sides.
+  return false;
+};
+
+// The placeholder text shown in place of a deleted (BOTH-scope) message.
+export const deletedMessageLabel = (
+  m: WsMessage,
+  myUserId: number | null,
+): string => {
+  const by =
+    (m as WsMessage & {deleted_by?: number}).deleted_by ?? m.sender_id;
+  return by === myUserId
+    ? 'You deleted this message'
+    : 'This message was deleted';
 };
 
 // Whether the given message is still within its 15-minute edit window.

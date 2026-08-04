@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import {CurrentUserAvatar} from '../../components/CurrentUserAvatar';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {appColors, typography, scaleWidth} from '../../global';
 import {useDrawer} from '../../context/DrawerContext';
@@ -21,7 +22,6 @@ import {getListDemoReq, markDemoRequestContacted} from '../../api/userAdmin.api'
 
 const gridBg = require('../../assets/images/grid-bg.png');
 const icMenu = require('../../assets/images/ic-menu.png');
-const icProfile = require('../../assets/images/ic-profile.png');
 const icDownload = require('../../assets/images/ic-download.png');
 const icCheck = require('../../assets/images/ic-check.png');
 
@@ -134,7 +134,10 @@ export const DemoRequestsScreen = () => {
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Demo Requests</Text>
           <TouchableOpacity style={styles.iconBtnCircle} activeOpacity={0.8}>
-            <Image source={icProfile} style={styles.headerIcon} />
+            <CurrentUserAvatar
+              size={scaleWidth(44)}
+              fallbackIconStyle={styles.headerIcon}
+            />
           </TouchableOpacity>
         </View>
 

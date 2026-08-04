@@ -9,15 +9,21 @@ import {
   ScrollView,
   StatusBar,
 } from 'react-native';
+import {CurrentUserAvatar} from '../../components/CurrentUserAvatar';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useNavigation} from '@react-navigation/native';
 import {appColors, typography, scaleWidth} from '../../global';
 import {useAppDispatch, useAppSelector} from '../../store';
-import {userProfileSelector} from '../../slices';
+import {
+  userProfileSelector,
+  profileImageUrlSelector,
+  profileImageKeySelector,
+} from '../../slices';
 import {isAdminRole} from '../../utils';
 import {logoutThunk} from '../../thunks';
 import {useDrawer} from '../../context/DrawerContext';
 import {ConfirmModal} from '../../components/ConfirmModal';
+import {Avatar} from '../../components/Avatar';
 import {useFetch} from '../../hooks';
 import {
   fetchEmailPreference,
@@ -27,7 +33,6 @@ import {
 
 const gridBg = require('../../assets/images/grid-bg.png');
 const icMenu = require('../../assets/images/ic-menu.png');
-const icProfile = require('../../assets/images/ic-profile.png');
 const icChevron = require('../../assets/images/ic-chevron.png');
 const icEdit = require('../../assets/images/ic-edit.png');
 const icKey = require('../../assets/images/ic-key.png');
@@ -60,11 +65,12 @@ export const SettingsScreen = () => {
   const navigation = useNavigation<any>();
   const {openDrawer} = useDrawer();
   const profile = useAppSelector(userProfileSelector);
+  const profileImageUrl = useAppSelector(profileImageUrlSelector);
+  const profileImageKey = useAppSelector(profileImageKeySelector);
 
   const name = profile?.name || profile?.email?.split('@')[0] || 'agent';
   const email = profile?.email || 'agent@titlemunke.com';
   const role = (profile?.groups?.[0] || 'agent').toUpperCase();
-  const initial = name.charAt(0).toUpperCase();
 
   // Notification email preferences (fetched, optimistic toggles).
   const {data: prefData} = useFetch(fetchEmailPreference, []);
@@ -175,15 +181,23 @@ export const SettingsScreen = () => {
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Settings</Text>
           <TouchableOpacity style={styles.iconBtnCircle} activeOpacity={0.8}>
-            <Image source={icProfile} style={styles.headerIcon} />
+            <CurrentUserAvatar
+              size={scaleWidth(44)}
+              fallbackIconStyle={styles.headerIcon}
+            />
           </TouchableOpacity>
         </View>
 
         {/* Profile card */}
         <View style={styles.profileCard}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{initial}</Text>
-          </View>
+          <Avatar
+            name={name}
+            id={profile?.sub}
+            size={scaleWidth(56)}
+            imageUrl={profileImageUrl}
+            cacheKey={profileImageKey}
+            style={styles.avatar}
+          />
           <View style={styles.profileInfo}>
             <Text style={styles.profileName} numberOfLines={1}>
               {name}
@@ -372,10 +386,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: scaleWidth(14),
-  },
-  avatarText: {
-    ...typography(700, 24, 'white'),
-    fontWeight: '700',
   },
   profileInfo: {flex: 1},
   profileName: {

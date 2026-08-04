@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import {CurrentUserAvatar} from '../../components/CurrentUserAvatar';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
@@ -28,7 +29,6 @@ import {
 
 const gridBg = require('../../assets/images/grid-bg.png');
 const icMenu = require('../../assets/images/ic-menu.png');
-const icProfile = require('../../assets/images/ic-profile.png');
 const icChevron = require('../../assets/images/ic-chevron.png');
 const icCheckPlain = require('../../assets/images/ic-check-plain.png');
 const icDownload = require('../../assets/images/ic-download.png');
@@ -206,7 +206,10 @@ export const OrgUsersScreen = () => {
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Users</Text>
           <TouchableOpacity style={styles.iconBtnCircle} activeOpacity={0.8}>
-            <Image source={icProfile} style={styles.headerIcon} />
+            <CurrentUserAvatar
+              size={scaleWidth(44)}
+              fallbackIconStyle={styles.headerIcon}
+            />
           </TouchableOpacity>
         </View>
 

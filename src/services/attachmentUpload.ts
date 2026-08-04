@@ -6,6 +6,8 @@ import {
   PermissionsAndroid,
 } from 'react-native';
 import {wsGetPresignedUrl} from './messaging.ws';
+import {getProfileImageUploadUrl} from '../api/userAdmin.api';
+import {seedCachedImageUri} from '../utils/imageCache';
 import type {AttachmentInput, PickedFile} from '../types';
 
 /**
@@ -362,6 +364,43 @@ export const uploadAttachment = async (
 export const uploadAttachments = (
   files: PickedFile[],
 ): Promise<AttachmentInput[]> => Promise.all(files.map(uploadAttachment));
+
+// Upload the user's profile photo: get a presigned URL from the profile
+// endpoint (which also persists the S3 key to the user record), then PUT the
+// raw image bytes to S3. Mirrors uploadAttachment's blob-util flow. Returns the
+// stable S3 key so callers can cache/render the image by it. On success the
+// just-picked local file is seeded into the disk cache under that key, so the
+// avatar renders instantly with no download round-trip.
+export const uploadProfileImage = async (
+  file: PickedFile,
+): Promise<string | undefined> => {
+  const {uploadUrl, s3Key} = await getProfileImageUploadUrl({
+    fileName: file.name,
+    fileType: file.type,
+  });
+
+  // blob-util wants a bare path (no file:// on iOS) or a content:// uri.
+  const path =
+    Platform.OS === 'ios' ? file.uri.replace('file://', '') : file.uri;
+
+  const res = await ReactNativeBlobUtil.fetch(
+    'PUT',
+    uploadUrl,
+    {'Content-Type': file.type},
+    ReactNativeBlobUtil.wrap(decodeURIComponent(path)),
+  );
+  const status = res.info().status;
+  if (status < 200 || status >= 300) {
+    throw new Error(`Upload failed (${status})`);
+  }
+
+  // Prime the cache with the bytes we already have on disk — future renders of
+  // this key (header, settings, edit profile) hit the cache instead of S3.
+  if (s3Key) {
+    await seedCachedImageUri(s3Key, file.uri);
+  }
+  return s3Key;
+};
 
 // Human-readable size (e.g. "1.2 MB").
 export const formatFileSize = (bytes?: number): string => {

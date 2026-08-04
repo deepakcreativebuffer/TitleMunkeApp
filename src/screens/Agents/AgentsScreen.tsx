@@ -10,6 +10,7 @@ import {
   StatusBar,
   ActivityIndicator,
 } from 'react-native';
+import {CurrentUserAvatar} from '../../components/CurrentUserAvatar';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
@@ -28,7 +29,6 @@ import {
 
 const gridBg = require('../../assets/images/grid-bg.png');
 const icMenu = require('../../assets/images/ic-menu.png');
-const icProfile = require('../../assets/images/ic-profile.png');
 const icChevron = require('../../assets/images/ic-chevron.png');
 const icDownload = require('../../assets/images/ic-download.png');
 const icUpload = require('../../assets/images/ic-upload.png');
@@ -235,8 +235,14 @@ export const AgentsScreen = () => {
             <Image source={icMenu} style={styles.headerIcon} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Agents</Text>
-          <TouchableOpacity style={styles.iconBtnCircle} activeOpacity={0.8}>
-            <Image source={icProfile} style={styles.headerIcon} />
+          <TouchableOpacity
+            style={styles.iconBtnCircle}
+            activeOpacity={0.8}
+            onPress={() => navigation.navigate('EditProfile')}>
+            <CurrentUserAvatar
+              size={scaleWidth(44)}
+              fallbackIconStyle={styles.headerIcon}
+            />
           </TouchableOpacity>
         </View>
 

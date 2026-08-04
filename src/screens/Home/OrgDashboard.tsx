@@ -1,4 +1,4 @@
-import React, {useCallback, useMemo, useState} from 'react';
+import React, {useMemo, useState} from 'react';
 import {
   View,
   Text,
@@ -18,7 +18,8 @@ import {AppStackParamList} from '../../types';
 import {useDrawer} from '../../context/DrawerContext';
 import {useAppSelector} from '../../store';
 import {userProfileSelector} from '../../slices';
-import {useFetch} from '../../hooks';
+import {useFetch, usePaginatedFetch} from '../../hooks';
+import {CurrentUserAvatar} from '../../components/CurrentUserAvatar';
 import {
   getOrganisationMetrics,
   getOrgBrokersList,
@@ -49,8 +50,18 @@ const fmtDate = (raw?: string | number): string => {
   });
 };
 
-const listFrom = (res: any): any[] =>
-  Array.isArray(res) ? res : res?.items ?? res?.data?.items ?? res?.data ?? [];
+// Pull the row list + pagination cursor out of a brokers/agents-for-org
+// response ({ items, nextToken }), tolerating a few nesting shapes.
+const extractOrgPage = (res: any): {items: any[]; nextToken: string | null} => {
+  const items = Array.isArray(res)
+    ? res
+    : res?.items ?? res?.data?.items ?? res?.data ?? [];
+  const nextToken = res?.nextToken ?? res?.data?.nextToken ?? null;
+  return {items, nextToken};
+};
+
+// Load more when the scroll position gets within this many px of the bottom.
+const LOAD_MORE_THRESHOLD = 320;
 
 export const OrgDashboard = () => {
   const insets = useSafeAreaInsets();
@@ -74,18 +85,29 @@ export const OrgDashboard = () => {
     };
   }, [rawMetrics]);
 
-  // Brokers list
-  const brokersFetcher = useCallback(() => getOrgBrokersList(), []);
-  const {data: rawBrokers, loading: brokersLoading} = useFetch(
-    brokersFetcher,
+  // Brokers list — paginated (loads more as the user scrolls).
+  const {
+    items: brokers,
+    loading: brokersLoading,
+    loadingMore: brokersLoadingMore,
+    loadMore: loadMoreBrokers,
+  } = usePaginatedFetch(
+    token => getOrgBrokersList(token ? {nextToken: token} : {}),
+    extractOrgPage,
     [],
   );
-  const brokers = useMemo(() => listFrom(rawBrokers), [rawBrokers]);
 
-  // Agents list
-  const agentsFetcher = useCallback(() => getOrgAgentsList(), []);
-  const {data: rawAgents, loading: agentsLoading} = useFetch(agentsFetcher, []);
-  const agents = useMemo(() => listFrom(rawAgents), [rawAgents]);
+  // Agents list — paginated.
+  const {
+    items: agents,
+    loading: agentsLoading,
+    loadingMore: agentsLoadingMore,
+    loadMore: loadMoreAgents,
+  } = usePaginatedFetch(
+    token => getOrgAgentsList(token ? {nextToken: token} : {}),
+    extractOrgPage,
+    [],
+  );
 
   const KPIS = [
     {label: 'Total Brokers', value: kpis.brokers, icon: icPeople},
@@ -95,6 +117,9 @@ export const OrgDashboard = () => {
   ];
 
   const listLoading = tab === 'broker' ? brokersLoading : agentsLoading;
+  const listLoadingMore =
+    tab === 'broker' ? brokersLoadingMore : agentsLoadingMore;
+  const loadMoreRows = tab === 'broker' ? loadMoreBrokers : loadMoreAgents;
   const rows = tab === 'broker' ? brokers : agents;
 
   return (
@@ -106,6 +131,16 @@ export const OrgDashboard = () => {
       />
       <ScrollView
         showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onScroll={e => {
+          const {layoutMeasurement, contentOffset, contentSize} =
+            e.nativeEvent;
+          const distanceToBottom =
+            contentSize.height - contentOffset.y - layoutMeasurement.height;
+          if (distanceToBottom < LOAD_MORE_THRESHOLD) {
+            loadMoreRows();
+          }
+        }}
         contentContainerStyle={[
           styles.scroll,
           {paddingTop: insets.top + scaleWidth(10)},
@@ -120,8 +155,14 @@ export const OrgDashboard = () => {
             <Image source={icMenu} style={styles.headerIcon} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Dashboard</Text>
-          <TouchableOpacity style={styles.iconBtnCircle} activeOpacity={0.8}>
-            <Image source={icProfile} style={styles.headerIcon} />
+          <TouchableOpacity
+            style={styles.iconBtnCircle}
+            activeOpacity={0.8}
+            onPress={() => navigation.navigate('EditProfile')}>
+            <CurrentUserAvatar
+              size={scaleWidth(44)}
+              fallbackIconStyle={styles.headerIcon}
+            />
           </TouchableOpacity>
         </View>
 
@@ -232,6 +273,12 @@ export const OrgDashboard = () => {
             ))}
           </View>
         )}
+        {listLoadingMore ? (
+          <ActivityIndicator
+            color={appColors.maroon}
+            style={{marginTop: scaleWidth(16)}}
+          />
+        ) : null}
       </ScrollView>
     </ImageBackground>
   );

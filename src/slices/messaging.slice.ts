@@ -83,9 +83,10 @@ const findConversationOfMessage = (
   state: MessagingState,
   messageId: number,
 ): number | undefined => {
+  const id = Number(messageId);
   for (const key of Object.keys(state.messages)) {
     const cid = Number(key);
-    if (state.messages[cid]?.some(m => m.id === messageId)) {
+    if (state.messages[cid]?.some(m => Number(m.id) === id)) {
       return cid;
     }
   }
@@ -307,13 +308,23 @@ const messagingSlice = createSlice({
       if (cid == null) {
         return;
       }
-      const m = state.messages[cid]?.find(x => x.id === messageId);
+      const m = state.messages[cid]?.find(x => Number(x.id) === Number(messageId));
       if (m) {
         m.deleted_at = new Date().toISOString();
         m.deleted_scope = deleteScope;
         m.content = null;
         m.attachments = [];
         (m as WsMessage & {deleted_by?: number}).deleted_by = deletedBy;
+      }
+      // Also reflect it on the conversation's embedded last message (list
+      // preview) so the other side's chat list shows "deleted" without a reopen.
+      const conv = state.conversations.find(c => c.id === cid);
+      const last = conv?.messages?.[0];
+      if (last && Number(last.id) === Number(messageId)) {
+        last.deleted_at = new Date().toISOString();
+        last.deleted_scope = deleteScope;
+        last.content = null;
+        last.attachments = [];
       }
     },
     applyReaction: (state, action: PayloadAction<ReactionUpdatedEvent>) => {
@@ -322,7 +333,7 @@ const messagingSlice = createSlice({
       if (cid == null) {
         return;
       }
-      const m = state.messages[cid]?.find(x => x.id === messageId);
+      const m = state.messages[cid]?.find(x => Number(x.id) === Number(messageId));
       if (m) {
         m.reactions = reactions as WsReaction[];
       }

@@ -24,7 +24,7 @@ import {
 import {startSearch} from '../../thunks';
 import {AppStackParamList, HomeStackParamList} from '../../types';
 import {useDrawer} from '../../context/DrawerContext';
-import {useFetch} from '../../hooks';
+import {useFetch, usePaginatedFetch} from '../../hooks';
 import {searchStatusMeta, isOrgRole, isAdminRole} from '../../utils';
 import {OrgDashboard} from './OrgDashboard';
 import {AdminDashboard} from './AdminDashboard';
@@ -41,6 +41,7 @@ import {
   AddressHit,
 } from '../../api/algolia';
 import { LiveActivity } from '../../native/LiveActivity';
+import {CurrentUserAvatar} from '../../components/CurrentUserAvatar';
 
 const gridBg = require('../../assets/images/grid-bg.png');
 const icMenu = require('../../assets/images/ic-menu.png');
@@ -75,20 +76,31 @@ const fmtWhen = (raw?: string | number): string => {
   });
 };
 
-const mapRecent = (res: any): Recent[] => {
-  const items: any[] =
-    res?.data?.listSearchHistories?.items ??
-    res?.listSearchHistories?.items ??
-    res?.items ??
-    (Array.isArray(res) ? res : []);
-  return items.slice(0, 6).map((it, i) => ({
+// Pull the raw history rows + pagination cursor out of one
+// list-search-histories response ({ data: { listSearchHistories } }).
+const extractSearchPage = (
+  res: any,
+): {items: any[]; nextToken: string | null} => {
+  const node = res?.data?.listSearchHistories ?? res?.listSearchHistories;
+  const items =
+    node?.items ?? res?.items ?? (Array.isArray(res) ? res : []);
+  const nextToken = node?.nextToken ?? res?.nextToken ?? null;
+  return {items, nextToken};
+};
+
+const mapRecentItems = (items: any[]): Recent[] =>
+  items.map((it, i) => ({
     id: String(it.id ?? it.search_id ?? i),
     address: it.address ?? '—',
-    when: fmtWhen(it.created_at ?? it.createdAt ?? it.property_summary?.['Date of Search']),
+    when: fmtWhen(
+      it.created_at ?? it.createdAt ?? it.property_summary?.['Date of Search'],
+    ),
     status: String(it.status ?? 'SUCCESS'),
     searchId: it.search_id ?? it.searchId ?? it.id,
   }));
-};
+
+// Load more when the scroll position gets within this many px of the bottom.
+const LOAD_MORE_THRESHOLD = 320;
 
 // Dashboard tab routes to the org overview for organisations, otherwise the
 // broker/agent search dashboard.
@@ -135,23 +147,27 @@ const BrokerDashboard = () => {
   const userId = profile?.sub;
   const brokerId = userId;
 
-  const recentFetcher = useCallback(
-    () =>
+  // Recent searches — paginated (loads more as the user scrolls the dashboard).
+  const {
+    items: recentRaw,
+    loading: recentLoading,
+    loadingMore: recentLoadingMore,
+    loadMore: loadMoreRecents,
+  } = usePaginatedFetch(
+    token =>
       listSearchHistories({
         userType: role,
         ...(isAgent ? {} : {brokerId}),
         userId,
-        limit: 6,
+        limit: 10,
+        ...(token ? {nextToken: token} : {}),
       }),
-    [role, isAgent, brokerId, userId],
+    extractSearchPage,
+    // Re-fetch the first page when the user/role changes or a search completes.
+    [role, isAgent, brokerId, userId, search.status],
   );
-  const {data: recentData, loading: recentLoading} = useFetch(recentFetcher, [
-    brokerId,
-    // re-fetch when a search completes
-    search.status,
-  ]);
   const recents = useMemo(() => {
-    const list = recentData ? mapRecent(recentData) : [];
+    const list = mapRecentItems(recentRaw);
     // Surface the live search immediately (before the backend list includes
     // it): show it on top as In Progress, then its status updates live. Skip if
     // the fetched list already has it (deduped by searchId).
@@ -168,9 +184,9 @@ const BrokerDashboard = () => {
         searchId: search.searchId,
       });
     }
-    return list.slice(0, 6);
+    return list;
   }, [
-    recentData,
+    recentRaw,
     search.searchId,
     search.status,
     search.address,
@@ -301,6 +317,16 @@ const BrokerDashboard = () => {
       />
       <ScrollView
         showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onScroll={e => {
+          const {layoutMeasurement, contentOffset, contentSize} =
+            e.nativeEvent;
+          const distanceToBottom =
+            contentSize.height - contentOffset.y - layoutMeasurement.height;
+          if (distanceToBottom < LOAD_MORE_THRESHOLD) {
+            loadMoreRecents();
+          }
+        }}
         contentContainerStyle={[
           styles.scroll,
           {paddingTop: insets.top + scaleWidth(10)},
@@ -315,8 +341,14 @@ const BrokerDashboard = () => {
             <Image source={icMenu} style={styles.headerIcon} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Dashboard</Text>
-          <TouchableOpacity style={styles.iconBtnCircle} activeOpacity={0.8}>
-            <Image source={icProfile} style={styles.headerIcon} />
+          <TouchableOpacity
+            style={styles.iconBtnCircle}
+            activeOpacity={0.8}
+            onPress={() => rootNav.navigate('EditProfile')}>
+            <CurrentUserAvatar
+              size={scaleWidth(44)}
+              fallbackIconStyle={styles.headerIcon}
+            />
           </TouchableOpacity>
         </View>
 
@@ -452,7 +484,13 @@ const BrokerDashboard = () => {
         {/* Recent searches */}
         <View style={styles.recentHead}>
           <Text style={styles.recentTitle}>Recent Searches</Text>
-          <TouchableOpacity onPress={() => navigation.navigate('SearchHistory')}>
+          <TouchableOpacity
+            // Jump to the Searches bottom tab (not the nested Home-stack
+            // screen), so the tab bar highlights "Searches" instead of staying
+            // on Home. Mirrors PropertyReportScreen's back-to-Searches nav.
+            onPress={() =>
+              rootNav.navigate('TabNavigator', {screen: 'SearchHistory'})
+            }>
             <Text style={styles.viewAll}>View all</Text>
           </TouchableOpacity>
         </View>
@@ -504,6 +542,12 @@ const BrokerDashboard = () => {
             );
           })
         )}
+        {recentLoadingMore ? (
+          <ActivityIndicator
+            color={appColors.maroon}
+            style={{marginTop: scaleWidth(14)}}
+          />
+        ) : null}
       </ScrollView>
     </ImageBackground>
   );

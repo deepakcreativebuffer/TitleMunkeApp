@@ -1,7 +1,8 @@
 import {createAsyncThunk} from '@reduxjs/toolkit';
 import axios from 'axios';
 import {loginRequest} from '../api';
-import {createAuditLog} from '../api/userAdmin.api';
+import {createAuditLog, getAdminDetails} from '../api/userAdmin.api';
+import {setProfileImage} from '../slices/user.slice';
 import {cognitoGlobalSignOut} from '../api/cognito';
 import {unregisterFcmToken} from '../services/fcm';
 import {disconnectMessagingSocket} from '../services/messaging.ws';
@@ -27,6 +28,31 @@ export const loginThunk = createAsyncThunk<
         message;
     }
     return rejectWithValue(message);
+  }
+});
+
+// Fetch the current user's profile photo (freshly-signed URL + stable S3 key)
+// and store it so every avatar (header, settings, edit profile) can show it.
+// Best-effort: a failure just leaves the initials avatar in place.
+export const refreshProfileImageThunk = createAsyncThunk<
+  void,
+  void,
+  {state: RootState}
+>('user/refreshProfileImage', async (_, {getState, dispatch}) => {
+  const sub = getState().user.user?.sub;
+  if (!sub) {
+    return;
+  }
+  try {
+    const res = await getAdminDetails(sub);
+    dispatch(
+      setProfileImage({
+        url: res?.profileImageUrl || null,
+        key: res?.attributes?.['custom:profile_image_key'] || null,
+      }),
+    );
+  } catch {
+    /* non-critical — keep whatever is already shown */
   }
 });
 

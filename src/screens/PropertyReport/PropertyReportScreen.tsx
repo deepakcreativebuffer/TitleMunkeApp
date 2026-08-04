@@ -187,7 +187,15 @@ export const PropertyReportScreen = ({
           <TouchableOpacity
             style={styles.iconBtn}
             activeOpacity={0.8}
-            onPress={() => navigation.goBack()}>
+            // Go back to wherever the report was opened from (Search page,
+            // dashboard recents, search history, …). Only fall back to the
+            // Searches tab when there's no back stack — e.g. the report was
+            // opened cold from a push notification / deep link.
+            onPress={() =>
+              navigation.canGoBack()
+                ? navigation.goBack()
+                : navigation.navigate('TabNavigator', {screen: 'SearchHistory'})
+            }>
             <Image source={icChevron} style={styles.backIcon} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Property Report</Text>

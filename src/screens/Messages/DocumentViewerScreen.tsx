@@ -15,6 +15,7 @@ import {appColors, typography, scaleWidth} from '../../global';
 import {AppScreenProps} from '../../types';
 import {downloadToCache, previewLocalFile} from '../../utils/documents';
 import {CachedImage} from '../../components/CachedImage';
+import {getCachedFileUri, peekCachedFileUri} from '../../utils/imageCache';
 
 const icChevron = require('../../assets/images/ic-chevron.png');
 
@@ -58,11 +59,24 @@ export const DocumentViewerScreen = ({
     (type ?? '').includes('pdf') ||
     (name ?? '').toLowerCase().endsWith('.pdf');
 
-  // iOS WKWebView renders PDF/images/text inline. Android WebView can't render
-  // PDF/Office → use Google's document viewer (works with the signed URL).
+  // Cache the document by its stable key. On iOS the WKWebView loads the cached
+  // local file:// (instant on re-open, no re-download). Seed synchronously from
+  // cache to avoid a mid-view source swap; download in the background otherwise.
+  const [docUri] = React.useState<string>(
+    () => (fileKey && !isImage ? peekCachedFileUri(fileKey) ?? url : url),
+  );
+  React.useEffect(() => {
+    if (fileKey && !isImage && !peekCachedFileUri(fileKey)) {
+      void getCachedFileUri(fileKey, url);
+    }
+  }, [fileKey, url, isImage]);
+
+  // iOS WKWebView renders PDF/images/text inline (from the cached local file).
+  // Android WebView can't render PDF/Office → Google's viewer needs a public
+  // URL, so it always uses the remote signed URL.
   const docSource =
     Platform.OS === 'ios'
-      ? {uri: url}
+      ? {uri: docUri}
       : {
           uri: `https://docs.google.com/viewer?embedded=true&url=${encodeURIComponent(
             url,

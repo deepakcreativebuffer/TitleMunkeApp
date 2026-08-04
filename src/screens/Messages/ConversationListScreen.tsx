@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   View,
   Text,
@@ -35,9 +41,13 @@ import {
   conversationTitle,
   conversationAvatar,
   conversationPreview,
+  messagePreview,
   otherParticipant,
 } from '../../utils/chat';
-import { wsGetConversations } from '../../services/messaging.ws';
+import {
+  wsGetConversations,
+  wsGetMessageHistory,
+} from '../../services/messaging.ws';
 
 const gridBg = require('../../assets/images/grid-bg.png');
 const icMenu = require('../../assets/images/ic-menu.png');
@@ -103,6 +113,35 @@ export const ConversationListScreen = ({
     setRefreshing(true);
     void wsGetConversations();
   };
+
+  // On cold start, getConversations' embedded last message can omit the
+  // `attachments` array, so an attachment-only last message (e.g. a voice note)
+  // renders an empty preview ("Start the conversation…") until the chat is
+  // opened. Proactively load history for exactly those conversations — where a
+  // last message exists but its preview computes empty — so the correct preview
+  // (🎤 Voice message, 📷 Photo, …) shows without the user opening the chat.
+  // Deduped per conversation so we don't re-request on every render.
+  const previewFetched = useRef<Set<number>>(new Set());
+  useEffect(() => {
+    if (!connected) {
+      return;
+    }
+    for (const c of conversations) {
+      const embedded = c.messages?.[0];
+      // Skip: no last message at all (truly empty conversation), history
+      // already loaded, or the embedded message already yields a preview.
+      if (
+        !embedded ||
+        messagesMap[c.id]?.length ||
+        previewFetched.current.has(c.id) ||
+        messagePreview(embedded)
+      ) {
+        continue;
+      }
+      previewFetched.current.add(c.id);
+      void wsGetMessageHistory({ conversationId: c.id });
+    }
+  }, [conversations, connected, messagesMap]);
 
   const q = query.trim().toLowerCase();
   const rows = useMemo(() => {

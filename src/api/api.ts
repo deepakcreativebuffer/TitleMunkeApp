@@ -19,7 +19,6 @@ api.interceptors.request.use(
     const user = store.getState()?.user;
     const token = user?.token; // Cognito ID token
     const accessToken = user?.accessToken;
-    console.log('token', token);
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }

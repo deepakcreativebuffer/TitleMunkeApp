@@ -2,6 +2,7 @@ export {default as userSlice} from './user.slice';
 export {
   setUserToken,
   setUser,
+  setProfileImage,
   clearAuthError,
   tokensRefreshed,
   logout,
@@ -10,6 +11,8 @@ export {
   currentUserTokenSelector,
   accessTokenSelector,
   userProfileSelector,
+  profileImageUrlSelector,
+  profileImageKeySelector,
   isAuthenticatedSelector,
   authStatusSelector,
   authErrorSelector,

@@ -359,6 +359,28 @@ export const updateProfileDetails = (data: {
   email: string;
 }) => put('/update-profile-details', {...data, emailOfUser: data.email});
 
+// Fetch a user's details by Cognito sub. Returns a freshly-signed
+// `profileImageUrl` (valid ~9h) plus `attributes['custom:profile_image_key']`.
+export const getAdminDetails = (adminId: string) =>
+  get<{
+    profileImageUrl?: string;
+    attributes?: {'custom:profile_image_key'?: string | null};
+  }>('/get-admin-details', {adminId});
+
+// Request a presigned S3 PUT URL for the user's profile photo. The backend
+// derives the user id / type from the auth token, persists the resulting key
+// to the DB + Cognito, and returns the URL to upload the raw bytes to.
+export const getProfileImageUploadUrl = (data: {
+  fileName: string;
+  fileType: string;
+}) =>
+  post<{
+    success?: boolean;
+    message?: string;
+    uploadUrl: string;
+    s3Key?: string;
+  }>('/upload-profile-image-on-s3', data);
+
 // Forgot password — backend triggers Cognito to email a reset code.
 export const forgotPassword = (email: string) =>
   post('/forgot-password', {email});

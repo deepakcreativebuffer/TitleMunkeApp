@@ -1,10 +1,12 @@
-import React, {useEffect, useRef, useState} from 'react';
+import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
+  GestureResponderEvent,
+  Animated,
 } from 'react-native';
 import {appColors, typography, scaleWidth} from '../global';
 import {
@@ -12,32 +14,60 @@ import {
   pausePlaying,
   resumePlaying,
   stopPlaying,
+  seekTo,
   formatMillis,
 } from '../services/audio';
+import {getCachedFileUri} from '../utils/imageCache';
 
 // Only one voice note plays at a time — starting one resets the previously
 // playing bubble's UI back to idle.
 let activeReset: null | (() => void) = null;
 
+const BAR_COUNT = 34;
+
+// Deterministic pseudo-waveform from the url so each voice note has a stable,
+// unique bar pattern (real amplitude samples aren't available from the recorder).
+const buildBars = (seedStr: string): number[] => {
+  let seed = 0;
+  for (let i = 0; i < seedStr.length; i++) {
+    seed = (seed * 31 + seedStr.charCodeAt(i)) >>> 0;
+  }
+  const rand = () => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return seed / 0x7fffffff;
+  };
+  return Array.from({length: BAR_COUNT}, () => 0.28 + rand() * 0.72);
+};
+
 interface Props {
   url: string;
   mine?: boolean;
   durationMs?: number;
+  // Stable S3 key — the audio is downloaded once to disk and replayed locally
+  // (no re-download / loading each time).
+  fileKey?: string | null;
 }
 
-export const VoiceMessage = ({url, mine, durationMs}: Props) => {
+export const VoiceMessage = ({url, mine, durationMs, fileKey}: Props) => {
   const [state, setState] = useState<'idle' | 'loading' | 'playing' | 'paused'>(
     'idle',
   );
   const [pos, setPos] = useState(0);
   const [dur, setDur] = useState(durationMs ?? 0);
+  const [waveW, setWaveW] = useState(0);
   const startedRef = useRef(false);
   const resetRef = useRef<() => void>(() => {});
+  // 0..1 progress, animated smoothly between the player's position updates.
+  const progress = useRef(new Animated.Value(0)).current;
+
+  const bars = useMemo(() => buildBars(url), [url]);
 
   resetRef.current = () => {
     startedRef.current = false;
     setState('idle');
     setPos(0);
+    progress.stopAnimation();
+    progress.setValue(0);
   };
 
   useEffect(() => {
@@ -67,11 +97,23 @@ export const VoiceMessage = ({url, mine, durationMs}: Props) => {
       activeReset = resetRef.current;
       startedRef.current = true;
       setState('loading');
-      await startPlaying(url, (p, d) => {
+      // Play the cached local copy (downloaded once) instead of re-streaming
+      // the signed URL every time.
+      const src = fileKey ? await getCachedFileUri(fileKey, url) : url;
+      await startPlaying(src, (p, d) => {
         setState('playing');
         setPos(p);
         if (d) {
           setDur(d);
+        }
+        // Smoothly ease the fill toward the new position (bridges the gaps
+        // between position updates → continuous WhatsApp-style motion).
+        if (d > 0) {
+          Animated.timing(progress, {
+            toValue: Math.min(1, p / d),
+            duration: 90,
+            useNativeDriver: false,
+          }).start();
         }
         // Near the end → finished.
         if (d && p >= d - 60) {
@@ -87,10 +129,26 @@ export const VoiceMessage = ({url, mine, durationMs}: Props) => {
     }
   };
 
-  const pct = dur > 0 ? Math.min(1, pos / dur) : 0;
+  // Tap anywhere on the waveform to seek (only once playback has started).
+  const onSeek = (e: GestureResponderEvent) => {
+    if (!startedRef.current || dur <= 0 || waveW <= 0) {
+      return;
+    }
+    const frac = Math.min(1, Math.max(0, e.nativeEvent.locationX / waveW));
+    const ms = frac * dur;
+    setPos(ms);
+    progress.setValue(frac);
+    void seekTo(ms);
+  };
+
   const tint = mine ? appColors.white : appColors.maroon;
-  const trackBg = mine ? 'rgba(255,255,255,0.35)' : 'rgba(94,23,23,0.18)';
+  const idleTint = mine ? 'rgba(255,255,255,0.45)' : 'rgba(94,23,23,0.28)';
   const timeColor = mine ? 'rgba(255,255,255,0.85)' : appColors.gray;
+  const barStyle = (h: number) => ({
+    width: scaleWidth(2),
+    height: Math.max(scaleWidth(3), scaleWidth(22) * h),
+    borderRadius: scaleWidth(1),
+  });
 
   return (
     <View style={styles.wrap}>
@@ -110,14 +168,39 @@ export const VoiceMessage = ({url, mine, durationMs}: Props) => {
         )}
       </TouchableOpacity>
       <View style={styles.mid}>
-        <View style={[styles.track, {backgroundColor: trackBg}]}>
-          <View
-            style={[
-              styles.fill,
-              {backgroundColor: tint, width: `${pct * 100}%`},
-            ]}
-          />
-        </View>
+        <TouchableOpacity
+          activeOpacity={1}
+          onPress={onSeek}
+          onLayout={e => setWaveW(e.nativeEvent.layout.width)}
+          style={styles.wave}>
+          {/* Base (unplayed) waveform */}
+          {bars.map((h, i) => (
+            <View key={i} style={[barStyle(h), {backgroundColor: idleTint}]} />
+          ))}
+          {/* Played overlay — same bars in full tint, clipped to the animated
+              progress width so the fill glides smoothly left→right. */}
+          {waveW > 0 ? (
+            <Animated.View
+              style={[
+                styles.overlay,
+                {
+                  width: progress.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, waveW],
+                  }),
+                },
+              ]}>
+              <View style={[styles.wave, {width: waveW}]}>
+                {bars.map((h, i) => (
+                  <View
+                    key={i}
+                    style={[barStyle(h), {backgroundColor: tint}]}
+                  />
+                ))}
+              </View>
+            </Animated.View>
+          ) : null}
+        </TouchableOpacity>
         <Text style={[styles.time, {color: timeColor}]}>
           {formatMillis(state === 'idle' ? dur : pos)}
         </Text>
@@ -130,7 +213,7 @@ const styles = StyleSheet.create({
   wrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    width: scaleWidth(200),
+    width: scaleWidth(210),
     paddingVertical: scaleWidth(2),
   },
   btn: {
@@ -160,14 +243,21 @@ const styles = StyleSheet.create({
     marginHorizontal: scaleWidth(1.5),
   },
   mid: {flex: 1},
-  track: {
-    height: scaleWidth(4),
-    borderRadius: scaleWidth(2),
+  wave: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    height: scaleWidth(24),
+  },
+  overlay: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    height: scaleWidth(24),
     overflow: 'hidden',
   },
-  fill: {height: '100%', borderRadius: scaleWidth(2)},
   time: {
     ...typography('regular', 11, 'gray'),
-    marginTop: scaleWidth(5),
+    marginTop: scaleWidth(3),
   },
 });

@@ -10,6 +10,7 @@ import {
   StatusBar,
   ActivityIndicator,
 } from 'react-native';
+import {CurrentUserAvatar} from '../../components/CurrentUserAvatar';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {appColors, typography, scaleWidth} from '../../global';
 import {useDrawer} from '../../context/DrawerContext';
@@ -26,7 +27,6 @@ import {
 
 const gridBg = require('../../assets/images/grid-bg.png');
 const icMenu = require('../../assets/images/ic-menu.png');
-const icProfile = require('../../assets/images/ic-profile.png');
 const icLogin = require('../../assets/images/ic-login.png');
 const icLogout = require('../../assets/images/ic-logout.png');
 const icSearch = require('../../assets/images/ic-search.png');
@@ -157,7 +157,10 @@ export const LogsScreen = () => {
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Audit Logs</Text>
           <TouchableOpacity style={styles.iconBtnCircle} activeOpacity={0.8}>
-            <Image source={icProfile} style={styles.headerIcon} />
+            <CurrentUserAvatar
+              size={scaleWidth(44)}
+              fallbackIconStyle={styles.headerIcon}
+            />
           </TouchableOpacity>
         </View>
 

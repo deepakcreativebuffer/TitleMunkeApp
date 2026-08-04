@@ -151,6 +151,12 @@ export const startPlaying = async (
   if (!a?.startPlayer) {
     throw new Error(AUDIO_UNAVAILABLE);
   }
+  // Report position frequently so the waveform progress moves smoothly.
+  try {
+    await a.setSubscriptionDuration?.(0.05);
+  } catch {
+    /* ignore */
+  }
   await a.startPlayer(uri);
   a.addPlayBackListener?.((e: any) =>
     onProgress?.(e?.currentPosition ?? 0, e?.duration ?? 0),
@@ -168,6 +174,15 @@ export const pausePlaying = async (): Promise<void> => {
 export const resumePlaying = async (): Promise<void> => {
   try {
     await getAudio()?.resumePlayer?.();
+  } catch {
+    /* ignore */
+  }
+};
+
+// Seek the current playback to a position (ms).
+export const seekTo = async (ms: number): Promise<void> => {
+  try {
+    await getAudio()?.seekToPlayer?.(Math.max(0, Math.round(ms)));
   } catch {
     /* ignore */
   }

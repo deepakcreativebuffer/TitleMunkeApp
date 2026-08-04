@@ -1,4 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   View,
   Text,
@@ -44,6 +50,8 @@ import {
   updateOptimisticState,
   markOptimisticFailed,
   markConversationReadLocally,
+  applyReaction,
+  applyDeletedMessage,
 } from '../../slices';
 import { Avatar } from '../../components/Avatar';
 import { CachedImage } from '../../components/CachedImage';
@@ -52,6 +60,7 @@ import {
   conversationTitle,
   otherParticipant,
   isMessageHiddenForMe,
+  deletedMessageLabel,
   withinEditWindow,
   groupReactions,
   attachmentViewUrl,
@@ -107,6 +116,54 @@ const mapBg = require('../../assets/images/streetmap.png');
 const icTrash = require('../../assets/images/ic-trash.png');
 
 const QUICK_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+
+// A reaction chip that pops in (scale + fade) when it first appears — a smooth
+// WhatsApp-style entrance instead of the message content snapping.
+const ReactionChip = ({
+  reaction,
+  count,
+  mine,
+  onPress,
+}: {
+  reaction: string;
+  count: number;
+  mine: boolean;
+  onPress: () => void;
+}) => {
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.spring(anim, {
+      toValue: 1,
+      useNativeDriver: true,
+      friction: 5,
+      tension: 160,
+    }).start();
+  }, [anim]);
+  return (
+    <Animated.View
+      style={{
+        opacity: anim,
+        transform: [
+          {
+            scale: anim.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0.3, 1],
+            }),
+          },
+        ],
+      }}
+    >
+      <TouchableOpacity
+        activeOpacity={0.7}
+        onPress={onPress}
+        style={[styles.reactChip, mine && styles.reactChipMine]}
+      >
+        <Text style={styles.reactEmoji}>{reaction}</Text>
+        {count > 1 ? <Text style={styles.reactCount}>{count}</Text> : null}
+      </TouchableOpacity>
+    </Animated.View>
+  );
+};
 
 // WhatsApp-style message ticks: single grey check = sent, overlapped double
 // blue checks = read. Rendered on the maroon "mine" bubble.
@@ -217,6 +274,24 @@ export const ChatScreen = ({ navigation, route }: AppScreenProps<'Chat'>) => {
     [],
   );
   const listRef = useRef<FlatList<any>>(null);
+  // Whether we've finished the "settle window" that reliably lands a freshly
+  // opened conversation at the newest message. While false, every layout/size
+  // change re-pins to the bottom; once true we only follow new messages when
+  // the user is already at the bottom. Reset when the conversation changes.
+  const didInitialScrollRef = useRef(false);
+  // Whether the user is currently near the bottom of the list. We only
+  // auto-scroll on new messages when they already are — so reading history or
+  // tapping "Load earlier" doesn't yank the view down.
+  const atBottomRef = useRef(true);
+  useEffect(() => {
+    didInitialScrollRef.current = false;
+    atBottomRef.current = true;
+  }, [resolvedConvId]);
+
+  // Scroll straight to the newest message.
+  const scrollToBottom = useCallback((animated: boolean) => {
+    listRef.current?.scrollToEnd({ animated });
+  }, []);
 
   // Prefer the LIVE conversation name (reflects group renames) over the title
   // passed as a route param when the chat was opened.
@@ -367,13 +442,37 @@ export const ChatScreen = ({ navigation, route }: AppScreenProps<'Chat'>) => {
     }
   }, [data.length, resolvedConvId, myUserId, dispatch, data]);
 
+  // Reliably land at the bottom when a conversation first opens (or re-opens).
+  // A non-inverted FlatList renders top-down and virtualizes, so a single
+  // scrollToEnd lands short while rows below are still measuring — worst on
+  // re-entry when the whole history is already loaded. Retry across a settle
+  // window so the final scroll happens after layout stabilizes, then latch.
   useEffect(() => {
-    const t = setTimeout(
-      () => listRef.current?.scrollToEnd({ animated: true }),
-      80,
+    if (didInitialScrollRef.current || data.length === 0) {
+      return;
+    }
+    const delays = [0, 50, 120, 250, 400, 600];
+    const timers = delays.map(d =>
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), d),
     );
+    const done = setTimeout(() => {
+      didInitialScrollRef.current = true;
+    }, 650);
+    return () => {
+      timers.forEach(clearTimeout);
+      clearTimeout(done);
+    };
+  }, [data.length]);
+
+  // Auto-scroll on new messages / typing indicator — but only if the user is
+  // already at the bottom, so scrolling up to read history isn't interrupted.
+  useEffect(() => {
+    if (!atBottomRef.current) {
+      return;
+    }
+    const t = setTimeout(() => scrollToBottom(true), 80);
     return () => clearTimeout(t);
-  }, [data.length, typingLabel]);
+  }, [data.length, typingLabel, scrollToBottom]);
 
   const makeOptimistic = (
     content: string,
@@ -738,23 +837,52 @@ export const ChatScreen = ({ navigation, route }: AppScreenProps<'Chat'>) => {
   };
 
   const toggleReaction = (m: WsMessage, emoji: string) => {
+    setActionMsg(null);
+    if (m.id <= 0 || myUserId == null) {
+      return;
+    }
     const mine = m.reactions?.some(
       r => r.user_id === myUserId && r.reaction === emoji,
     );
-    if (m.id > 0) {
-      wsReactToMessage(m.id, emoji, !!mine);
-    }
-    setActionMsg(null);
+    // Optimistic: show/remove the emoji INSTANTLY; the server reconciles via
+    // the messageReactionUpdated echo. Also covers the other user's view.
+    const next = mine
+      ? (m.reactions ?? []).filter(
+          r => !(r.user_id === myUserId && r.reaction === emoji),
+        )
+      : [
+          ...(m.reactions ?? []),
+          { user_id: myUserId, reaction: emoji, message_id: m.id },
+        ];
+    dispatch(
+      applyReaction({ messageId: m.id, reactions: next, removed: !!mine }),
+    );
+    wsReactToMessage(m.id, emoji, !!mine);
   };
 
   const onDelete = (m: WsMessage) => {
     setActionMsg(null);
-    Alert.alert('Delete message', 'Delete this message?', [
+    Alert.alert('Delete message', 'Delete this message for everyone?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
         style: 'destructive',
-        onPress: () => m.id > 0 && wsDeleteMessage(m.id),
+        onPress: () => {
+          if (m.id <= 0) {
+            return;
+          }
+          // Optimistic: mark it deleted INSTANTLY (shows the "deleted" note);
+          // the server processes + broadcasts to the other user in the
+          // background via the messageDeleted echo.
+          dispatch(
+            applyDeletedMessage({
+              messageId: m.id,
+              deleteScope: 'BOTH',
+              deletedBy: myUserId ?? -1,
+            }),
+          );
+          wsDeleteMessage(m.id);
+        },
       },
     ]);
   };
@@ -836,7 +964,9 @@ export const ChatScreen = ({ navigation, route }: AppScreenProps<'Chat'>) => {
     }
     return (
       <Pressable
-        onLongPress={() => item.id > 0 && setActionMsg(item)}
+        onLongPress={() =>
+          item.id > 0 && !item.deleted_at && setActionMsg(item)
+        }
         delayLongPress={250}
         style={[
           styles.row,
@@ -856,7 +986,7 @@ export const ChatScreen = ({ navigation, route }: AppScreenProps<'Chat'>) => {
               mine ? styles.bubbleMine : styles.bubbleTheirs,
             ]}
           >
-            {rp ? (
+            {!item.deleted_at && rp ? (
               <View
                 style={[
                   styles.replyQuote,
@@ -897,11 +1027,13 @@ export const ChatScreen = ({ navigation, route }: AppScreenProps<'Chat'>) => {
             ) : null}
 
             {/* Attachments */}
-            {item.attachments?.map((a, i) =>
+            {!item.deleted_at &&
+              item.attachments?.map((a, i) =>
               a.file_type?.startsWith('audio') ? (
                 <VoiceMessage
                   key={i}
                   url={attachmentViewUrl(a)}
+                  fileKey={a.file_key}
                   mine={mine}
                   durationMs={
                     Number(a.file_name?.match(/_(\d+)ms/)?.[1]) || undefined
@@ -953,6 +1085,18 @@ export const ChatScreen = ({ navigation, route }: AppScreenProps<'Chat'>) => {
             )}
 
             {(() => {
+              if (item.deleted_at) {
+                return (
+                  <Text
+                    style={[
+                      styles.deletedText,
+                      mine && styles.deletedTextMine,
+                    ]}
+                  >
+                    🚫 {deletedMessageLabel(item, myUserId)}
+                  </Text>
+                );
+              }
               const loc = parseSharedLocation(item.content);
               if (loc) {
                 return (
@@ -996,7 +1140,7 @@ export const ChatScreen = ({ navigation, route }: AppScreenProps<'Chat'>) => {
               <Text style={[styles.metaTime, mine && styles.metaTimeMine]}>
                 {clockTime(new Date(item.created_at).getTime())}
               </Text>
-              {mine ? (
+              {mine && !item.deleted_at ? (
                 item._failed ? (
                   <Text style={styles.failMark}>!</Text>
                 ) : item._pending ? (
@@ -1009,21 +1153,17 @@ export const ChatScreen = ({ navigation, route }: AppScreenProps<'Chat'>) => {
           </View>
 
           {/* Reactions */}
-          {reactions.length ? (
+          {!item.deleted_at && reactions.length ? (
             <View style={[styles.reactRow, mine && { alignSelf: 'flex-end' }]}>
               {reactions.map(r => (
-                <TouchableOpacity
+                // Tapping a reaction shows WHO reacted (reacting is hold-only).
+                <ReactionChip
                   key={r.reaction}
-                  activeOpacity={0.7}
-                  // Tapping a reaction shows WHO reacted (reacting is hold-only).
+                  reaction={r.reaction}
+                  count={r.count}
+                  mine={r.mine}
                   onPress={() => setReactionsMsg(item)}
-                  style={[styles.reactChip, r.mine && styles.reactChipMine]}
-                >
-                  <Text style={styles.reactEmoji}>{r.reaction}</Text>
-                  {r.count > 1 ? (
-                    <Text style={styles.reactCount}>{r.count}</Text>
-                  ) : null}
-                </TouchableOpacity>
+                />
               ))}
             </View>
           ) : null}
@@ -1139,9 +1279,23 @@ export const ChatScreen = ({ navigation, route }: AppScreenProps<'Chat'>) => {
           renderItem={renderItem}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
-          onContentSizeChange={() =>
-            listRef.current?.scrollToEnd({ animated: false })
-          }
+          scrollEventThrottle={16}
+          onScroll={e => {
+            const { contentOffset, contentSize, layoutMeasurement } =
+              e.nativeEvent;
+            atBottomRef.current =
+              contentSize.height - contentOffset.y - layoutMeasurement.height <
+              120;
+          }}
+          onContentSizeChange={() => {
+            // During the initial settle window keep pinning to the bottom (rows
+            // are still measuring); afterwards only follow content when the user
+            // is already at the bottom — so reading history or "Load earlier"
+            // (which prepends content) doesn't yank the view down.
+            if (!didInitialScrollRef.current || atBottomRef.current) {
+              scrollToBottom(false);
+            }
+          }}
           ListHeaderComponent={
             cursor != null ? (
               <TouchableOpacity
@@ -1464,7 +1618,22 @@ export const ChatScreen = ({ navigation, route }: AppScreenProps<'Chat'>) => {
                       activeOpacity={isMe ? 0.6 : 1}
                       disabled={!isMe}
                       onPress={() => {
-                        if (reactionsMsg && reactionsMsg.id > 0) {
+                        // Only the current user can remove their own reaction.
+                        if (isMe && reactionsMsg && reactionsMsg.id > 0) {
+                          // Optimistic remove; server reconciles in background.
+                          dispatch(
+                            applyReaction({
+                              messageId: reactionsMsg.id,
+                              reactions: (reactionsMsg.reactions ?? []).filter(
+                                x =>
+                                  !(
+                                    x.user_id === myUserId &&
+                                    x.reaction === r.reaction
+                                  ),
+                              ),
+                              removed: true,
+                            }),
+                          );
                           wsReactToMessage(reactionsMsg.id, r.reaction, true);
                         }
                         setReactionsMsg(null);
@@ -1607,6 +1776,12 @@ const styles = StyleSheet.create({
     ...typography('regular', 14, 'coffeeDark'),
     lineHeight: scaleWidth(20),
   },
+  deletedText: {
+    ...typography('regular', 13.5, 'gray'),
+    fontStyle: 'italic',
+    lineHeight: scaleWidth(19),
+  },
+  deletedTextMine: { color: 'rgba(255,255,255,0.8)' },
   replyQuote: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1749,8 +1924,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: scaleWidth(4),
-    marginTop: scaleWidth(3),
-    marginLeft: scaleWidth(6),
+    // Overlap the bubble's bottom edge (WhatsApp-style) so adding a reaction
+    // barely changes the row height → minimal layout shift, smooth transition.
+    marginTop: -scaleWidth(11),
+    marginBottom: scaleWidth(1),
+    marginHorizontal: scaleWidth(10),
+    zIndex: 2,
   },
   reactChip: {
     flexDirection: 'row',

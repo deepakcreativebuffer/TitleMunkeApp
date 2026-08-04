@@ -1,7 +1,8 @@
 import {useEffect} from 'react';
 import {AppState, AppStateStatus} from 'react-native';
-import {useAppSelector} from '../store';
+import {useAppSelector, useAppDispatch} from '../store';
 import {isAuthenticatedSelector} from '../slices';
+import {refreshProfileImageThunk} from '../thunks';
 import {
   connectMessagingSocket,
   disconnectMessagingSocket,
@@ -17,14 +18,17 @@ import {
  */
 export const MessagingManager = () => {
   const isAuthed = useAppSelector(isAuthenticatedSelector);
+  const dispatch = useAppDispatch();
 
   useEffect(() => {
     if (isAuthed) {
       connectMessagingSocket();
+      // Load the current user's profile photo so every avatar can show it.
+      dispatch(refreshProfileImageThunk());
     } else {
       disconnectMessagingSocket();
     }
-  }, [isAuthed]);
+  }, [isAuthed, dispatch]);
 
   useEffect(() => {
     const onChange = (next: AppStateStatus) => {

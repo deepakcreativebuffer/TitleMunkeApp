@@ -1,12 +1,22 @@
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
+import type {NavigatorScreenParams} from '@react-navigation/native';
 import type {NearbyProperty} from '../data/nearbyProperties';
+
+// Bottom-tab routes (the tabs inside TabNavigator).
+export type TabParamList = {
+  Home: undefined;
+  SearchHistory: undefined;
+  Messages: undefined;
+  NearbySearch: undefined;
+  Requests: undefined;
+};
 
 export type AppStackParamList = {
   SplashScreen: undefined;
   OnboardingScreen: undefined;
   LoginScreen: undefined;
   ForgotPassword: undefined;
-  TabNavigator: undefined;
+  TabNavigator: NavigatorScreenParams<TabParamList> | undefined;
   PropertyReport: {address: string; when: string; searchId?: string};
   SearchProgress: undefined;
   SearchMap: {

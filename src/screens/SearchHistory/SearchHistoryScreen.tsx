@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -22,13 +22,14 @@ import {
   currentSearchSelector,
   userRoleSelector,
 } from '../../slices';
-import { useFetch } from '../../hooks';
+import { usePaginatedFetch } from '../../hooks';
 import { searchStatusMeta } from '../../utils';
 import { listSearchHistories } from '../../api/userAdmin.api';
 import { extractLatLng } from '../../api/geocode';
+import { useDrawer } from '../../context/DrawerContext';
 
 const gridBg = require('../../assets/images/grid-bg.png');
-const icChevron = require('../../assets/images/ic-chevron.png');
+const icMenu = require('../../assets/images/ic-menu.png');
 const icPin = require('../../assets/images/ic-pin.png');
 const icSearch = require('../../assets/images/ic-search.png');
 const icClock = require('../../assets/images/ic-clock.png');
@@ -62,17 +63,22 @@ const formatWhen = (raw?: string | number): string => {
   });
 };
 
-const mapHistory = (res: any): HistoryItem[] => {
-  if (__DEV__) {
-    console.log('[History] raw response:', JSON.stringify(res)?.slice(0, 600));
-  }
-  // Backend wraps this AppSync-style: { data: { listSearchHistories: { items } } }
-  const items: any[] =
-    res?.data?.listSearchHistories?.items ??
-    res?.listSearchHistories?.items ??
+// Backend wraps this AppSync-style: { data: { listSearchHistories: { items,
+// nextToken } } }. Pull out the rows + pagination cursor.
+const extractHistoryPage = (
+  res: any,
+): {items: any[]; nextToken: string | null} => {
+  const node = res?.data?.listSearchHistories ?? res?.listSearchHistories;
+  const items =
+    node?.items ??
     res?.items ??
     res?.data?.items ??
     (Array.isArray(res) ? res : []);
+  const nextToken = node?.nextToken ?? res?.nextToken ?? null;
+  return {items, nextToken};
+};
+
+const mapHistory = (items: any[]): HistoryItem[] => {
   return items.map((it, i) => {
     const coord = extractLatLng(it);
     return {
@@ -95,7 +101,7 @@ const mapHistory = (res: any): HistoryItem[] => {
 export const SearchHistoryScreen = () => {
   const insets = useSafeAreaInsets();
   const rootNav = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
-  const navigation = rootNav;
+  const { openDrawer } = useDrawer();
   const profile = useAppSelector(userProfileSelector);
   const liveSearch = useAppSelector(currentSearchSelector);
   const role = useAppSelector(userRoleSelector);
@@ -103,26 +109,33 @@ export const SearchHistoryScreen = () => {
   const brokerId = profile?.sub;
   const [query, setQuery] = useState('');
 
-  const fetcher = useCallback(
-    () =>
+  // Paginated (loads more as the user scrolls). Re-fetches page one when the
+  // user/role changes or an in-flight search changes state (e.g. → SUCCESS).
+  const {
+    items: rawItems,
+    loading,
+    loadingMore,
+    loadMore,
+  } = usePaginatedFetch(
+    token =>
       listSearchHistories({
         userType: role,
         ...(isAgent ? {} : {brokerId}),
         userId: brokerId,
-        limit: 50,
+        limit: 20,
+        ...(token ? {nextToken: token} : {}),
       }),
-    [role, isAgent, brokerId],
+    extractHistoryPage,
+    [role, isAgent, brokerId, liveSearch.status],
   );
-  // Re-fetch when an in-flight search changes state (e.g. → SUCCESS).
-  const { data, loading } = useFetch(fetcher, [brokerId, liveSearch.status]);
   const items = useMemo(() => {
-    const mapped = data ? mapHistory(data) : [];
+    const mapped = mapHistory(rawItems);
     if (!query.trim()) {
       return mapped;
     }
     const q = query.trim().toLowerCase();
     return mapped.filter(it => it.address.toLowerCase().includes(q));
-  }, [data, query]);
+  }, [rawItems, query]);
 
   return (
     <ImageBackground source={gridBg} resizeMode="cover" style={styles.bg}>
@@ -133,6 +146,16 @@ export const SearchHistoryScreen = () => {
       />
       <ScrollView
         showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onScroll={e => {
+          const { layoutMeasurement, contentOffset, contentSize } =
+            e.nativeEvent;
+          const distanceToBottom =
+            contentSize.height - contentOffset.y - layoutMeasurement.height;
+          if (distanceToBottom < 320) {
+            loadMore();
+          }
+        }}
         contentContainerStyle={[
           styles.scroll,
           { paddingTop: insets.top + scaleWidth(10) },
@@ -141,18 +164,13 @@ export const SearchHistoryScreen = () => {
       >
         {/* Header */}
         <View style={styles.header}>
-          {navigation.canGoBack() ? (
-            <TouchableOpacity
-              style={styles.backBtn}
-              activeOpacity={0.8}
-              onPress={() => navigation.goBack()}
-            >
-              <Image source={icChevron} style={styles.backIcon} />
-            </TouchableOpacity>
-          ) : (
-            // Root tab: no back target — keep a spacer so the title stays centered.
-            <View style={styles.backSpacer} />
-          )}
+          <TouchableOpacity
+            style={styles.menuBtn}
+            activeOpacity={0.8}
+            onPress={openDrawer}
+          >
+            <Image source={icMenu} style={styles.menuIcon} />
+          </TouchableOpacity>
           <Text style={styles.headerTitle}>Search History</Text>
           <TouchableOpacity
             style={styles.filterBtn}
@@ -237,6 +255,12 @@ export const SearchHistoryScreen = () => {
             );
           })
         )}
+        {loadingMore ? (
+          <ActivityIndicator
+            color={appColors.maroon}
+            style={{ marginTop: scaleWidth(4), marginBottom: scaleWidth(14) }}
+          />
+        ) : null}
       </ScrollView>
     </ImageBackground>
   );
@@ -262,7 +286,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: scaleWidth(16),
   },
-  backBtn: {
+  menuBtn: {
     width: scaleWidth(44),
     height: scaleWidth(44),
     borderRadius: scaleWidth(12),
@@ -271,14 +295,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     ...shadow,
   },
-  backSpacer: {width: scaleWidth(44), height: scaleWidth(44)},
-  backIcon: {
-    width: scaleWidth(18),
-    height: scaleWidth(18),
+  menuIcon: {
+    width: scaleWidth(20),
+    height: scaleWidth(20),
     tintColor: appColors.coffeeDark,
-    transform: [{ scaleX: -1 }],
   },
   headerTitle: {
+    flex: 1,
+    textAlign: 'center',
     ...typography(700, 18, 'coffeeDark'),
     fontWeight: '700',
   },

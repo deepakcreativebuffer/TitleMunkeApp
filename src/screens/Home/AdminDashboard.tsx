@@ -19,7 +19,8 @@ import {AppStackParamList} from '../../types';
 import {useDrawer} from '../../context/DrawerContext';
 import {useAppSelector} from '../../store';
 import {userProfileSelector} from '../../slices';
-import {useFetch} from '../../hooks';
+import {useFetch, usePaginatedFetch} from '../../hooks';
+import {CurrentUserAvatar} from '../../components/CurrentUserAvatar';
 import {shareCsvInApp} from '../../utils/documents';
 import {
   getAdminMetrics,
@@ -61,12 +62,24 @@ const fmtDate = (raw?: string | number): string => {
   });
 };
 
-const listFrom = (res: any): any[] =>
-  res?.updatedOrganisations ??
-  res?.items ??
-  res?.data?.items ??
-  res?.data ??
-  (Array.isArray(res) ? res : []);
+// Pull rows + pagination cursor out of an admin list response. Organisations
+// come back as { updatedOrganisations, nextToken }; brokers/agents as
+// { items, nextToken }.
+const extractAdminPage = (
+  res: any,
+): {items: any[]; nextToken: string | null} => {
+  const items =
+    res?.updatedOrganisations ??
+    res?.items ??
+    res?.data?.items ??
+    res?.data ??
+    (Array.isArray(res) ? res : []);
+  const nextToken = res?.nextToken ?? res?.data?.nextToken ?? null;
+  return {items, nextToken};
+};
+
+// Load more when the scroll position gets within this many px of the bottom.
+const LOAD_MORE_THRESHOLD = 320;
 
 const statusMeta = (status?: string): {bg: string; color: string} => {
   const s = String(status ?? '').toUpperCase();
@@ -105,19 +118,30 @@ export const AdminDashboard = () => {
     {label: 'Demo Requests', value: m.demoRequestCount ?? 0, icon: icClock},
   ];
 
-  // Business list per tab
-  const listFetcher = useCallback(() => {
-    const params = {admin_dashboard_global_filter: filter};
-    if (tab === 'organisation') {
-      return listOrganisations(params);
-    }
-    if (tab === 'broker') {
-      return listBrokersForAdmin(params);
-    }
-    return listAgentsForAdmin(params);
-  }, [tab, filter]);
-  const {data: rawRows, loading} = useFetch(listFetcher, [tab, filter]);
-  const rows = useMemo(() => listFrom(rawRows), [rawRows]);
+  // Business list per tab — paginated (loads more as the user scrolls). One
+  // paginator switches on tab + time filter; changing either reloads page one.
+  const {
+    items: rows,
+    loading,
+    loadingMore,
+    loadMore: loadMoreRows,
+  } = usePaginatedFetch(
+    token => {
+      const params = {
+        admin_dashboard_global_filter: filter,
+        ...(token ? {nextToken: token} : {}),
+      };
+      if (tab === 'organisation') {
+        return listOrganisations(params);
+      }
+      if (tab === 'broker') {
+        return listBrokersForAdmin(params);
+      }
+      return listAgentsForAdmin(params);
+    },
+    extractAdminPage,
+    [tab, filter],
+  );
 
   const totalBusiness =
     tab === 'organisation'
@@ -163,6 +187,16 @@ export const AdminDashboard = () => {
       />
       <ScrollView
         showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onScroll={e => {
+          const {layoutMeasurement, contentOffset, contentSize} =
+            e.nativeEvent;
+          const distanceToBottom =
+            contentSize.height - contentOffset.y - layoutMeasurement.height;
+          if (distanceToBottom < LOAD_MORE_THRESHOLD) {
+            loadMoreRows();
+          }
+        }}
         contentContainerStyle={[
           styles.scroll,
           {paddingTop: insets.top + scaleWidth(10)},
@@ -177,8 +211,14 @@ export const AdminDashboard = () => {
             <Image source={icMenu} style={styles.headerIcon} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Dashboard</Text>
-          <TouchableOpacity style={styles.iconBtnCircle} activeOpacity={0.8}>
-            <Image source={icProfile} style={styles.headerIcon} />
+          <TouchableOpacity
+            style={styles.iconBtnCircle}
+            activeOpacity={0.8}
+            onPress={() => navigation.navigate('EditProfile')}>
+            <CurrentUserAvatar
+              size={scaleWidth(44)}
+              fallbackIconStyle={styles.headerIcon}
+            />
           </TouchableOpacity>
         </View>
 
@@ -312,6 +352,12 @@ export const AdminDashboard = () => {
             })}
           </View>
         )}
+        {loadingMore ? (
+          <ActivityIndicator
+            color={appColors.maroon}
+            style={{marginTop: scaleWidth(16)}}
+          />
+        ) : null}
       </ScrollView>
     </ImageBackground>
   );

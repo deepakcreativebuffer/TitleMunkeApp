@@ -16,6 +16,10 @@ interface UserState {
   isAuthenticated: boolean;
   status: Status;
   error: string | null;
+  // Signed URL for the current user's profile photo (rotates ~9h) and the
+  // stable S3 key used to cache the image to disk across URL rotations.
+  profileImageUrl: string | null;
+  profileImageKey: string | null;
 }
 
 const initialState: UserState = {
@@ -28,6 +32,8 @@ const initialState: UserState = {
   isAuthenticated: false,
   status: 'idle',
   error: null,
+  profileImageUrl: null,
+  profileImageKey: null,
 };
 
 // Build the user profile from the Cognito ID-token claims.
@@ -55,6 +61,14 @@ const userSlice = createSlice({
     },
     setUser: (state, action: PayloadAction<AuthUser>) => {
       state.user = action.payload;
+    },
+    // Current user's profile photo (signed URL + stable S3 cache key).
+    setProfileImage: (
+      state,
+      action: PayloadAction<{url: string | null; key: string | null}>,
+    ) => {
+      state.profileImageUrl = action.payload.url;
+      state.profileImageKey = action.payload.key;
     },
     clearAuthError: state => {
       state.error = null;
@@ -124,14 +138,24 @@ const userSlice = createSlice({
   },
 });
 
-export const {setUserToken, setUser, clearAuthError, tokensRefreshed, logout} =
-  userSlice.actions;
+export const {
+  setUserToken,
+  setUser,
+  setProfileImage,
+  clearAuthError,
+  tokensRefreshed,
+  logout,
+} = userSlice.actions;
 
 // Selectors
 export const currentUserTokenSelector = (state: RootState) => state.user.token;
 export const accessTokenSelector = (state: RootState) =>
   state.user.accessToken;
 export const userProfileSelector = (state: RootState) => state.user.user;
+export const profileImageUrlSelector = (state: RootState) =>
+  state.user.profileImageUrl;
+export const profileImageKeySelector = (state: RootState) =>
+  state.user.profileImageKey;
 export const isAuthenticatedSelector = (state: RootState) =>
   state.user.isAuthenticated;
 export const authStatusSelector = (state: RootState) => state.user.status;

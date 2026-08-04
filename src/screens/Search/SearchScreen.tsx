@@ -1,4 +1,4 @@
-import React, {useCallback, useMemo} from 'react';
+import React, {useMemo} from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   StatusBar,
   ActivityIndicator,
 } from 'react-native';
+import {CurrentUserAvatar} from '../../components/CurrentUserAvatar';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useNavigation} from '@react-navigation/native';
 import {NativeStackNavigationProp} from '@react-navigation/native-stack';
@@ -22,14 +23,13 @@ import {
   userRoleSelector,
   currentSearchSelector,
 } from '../../slices';
-import {useFetch} from '../../hooks';
+import {usePaginatedFetch} from '../../hooks';
 import {searchStatusMeta} from '../../utils';
 import {listSearchHistories} from '../../api/userAdmin.api';
 import {SearchCard} from '../../components/SearchCard';
 
 const gridBg = require('../../assets/images/grid-bg.png');
 const icMenu = require('../../assets/images/ic-menu.png');
-const icProfile = require('../../assets/images/ic-profile.png');
 const icPin = require('../../assets/images/ic-pin.png');
 
 const fmtWhen = (raw?: string | number): string => {
@@ -48,20 +48,28 @@ const fmtWhen = (raw?: string | number): string => {
   });
 };
 
-const mapRecent = (res: any) => {
-  const items: any[] =
-    res?.data?.listSearchHistories?.items ??
-    res?.listSearchHistories?.items ??
-    res?.items ??
-    (Array.isArray(res) ? res : []);
-  return items.slice(0, 6).map((it, i) => ({
+// Pull raw history rows + pagination cursor out of one list-search-histories
+// response ({ data: { listSearchHistories: { items, nextToken } } }).
+const extractSearchPage = (
+  res: any,
+): {items: any[]; nextToken: string | null} => {
+  const node = res?.data?.listSearchHistories ?? res?.listSearchHistories;
+  const items = node?.items ?? res?.items ?? (Array.isArray(res) ? res : []);
+  const nextToken = node?.nextToken ?? res?.nextToken ?? null;
+  return {items, nextToken};
+};
+
+const mapRecentItems = (items: any[]) =>
+  items.map((it, i) => ({
     id: String(it.id ?? it.search_id ?? i),
     address: it.address ?? '—',
     when: fmtWhen(it.created_at ?? it.createdAt),
     status: String(it.status ?? 'SUCCESS'),
     searchId: it.search_id ?? it.searchId ?? it.id,
   }));
-};
+
+// Load more when the scroll position gets within this many px of the bottom.
+const LOAD_MORE_THRESHOLD = 320;
 
 export const SearchScreen = () => {
   const insets = useSafeAreaInsets();
@@ -72,17 +80,26 @@ export const SearchScreen = () => {
   const search = useAppSelector(currentSearchSelector);
   const userId = profile?.sub;
 
-  const recentFetcher = useCallback(
-    () => listSearchHistories({userType: role, userId, limit: 6}),
-    [role, userId],
+  // Recent searches — paginated (loads more as the user scrolls).
+  const {
+    items: recentRaw,
+    loading,
+    loadingMore,
+    loadMore: loadMoreRecents,
+  } = usePaginatedFetch(
+    token =>
+      listSearchHistories({
+        userType: role,
+        userId,
+        limit: 10,
+        ...(token ? {nextToken: token} : {}),
+      }),
+    extractSearchPage,
+    // Re-fetch the first page when the user/role changes or a search completes.
+    [role, userId, search.status],
   );
-  const {data: recentData, loading} = useFetch(recentFetcher, [
-    role,
-    userId,
-    search.status,
-  ]);
   const recents = useMemo(() => {
-    const list = recentData ? mapRecent(recentData) : [];
+    const list = mapRecentItems(recentRaw);
     // Show the live search immediately (In Progress) before the backend list
     // includes it; status then updates live. Deduped by searchId.
     if (
@@ -98,9 +115,9 @@ export const SearchScreen = () => {
         searchId: search.searchId,
       });
     }
-    return list.slice(0, 6);
+    return list;
   }, [
-    recentData,
+    recentRaw,
     search.searchId,
     search.status,
     search.address,
@@ -117,6 +134,16 @@ export const SearchScreen = () => {
       <ScrollView
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        scrollEventThrottle={16}
+        onScroll={e => {
+          const {layoutMeasurement, contentOffset, contentSize} =
+            e.nativeEvent;
+          const distanceToBottom =
+            contentSize.height - contentOffset.y - layoutMeasurement.height;
+          if (distanceToBottom < LOAD_MORE_THRESHOLD) {
+            loadMoreRecents();
+          }
+        }}
         contentContainerStyle={[
           styles.scroll,
           {paddingTop: insets.top + scaleWidth(10)},
@@ -131,8 +158,14 @@ export const SearchScreen = () => {
             <Image source={icMenu} style={styles.headerIcon} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Search</Text>
-          <TouchableOpacity style={styles.iconBtnCircle} activeOpacity={0.8}>
-            <Image source={icProfile} style={styles.headerIcon} />
+          <TouchableOpacity
+            style={styles.iconBtnCircle}
+            activeOpacity={0.8}
+            onPress={() => nav.navigate('EditProfile')}>
+            <CurrentUserAvatar
+              size={scaleWidth(44)}
+              fallbackIconStyle={styles.headerIcon}
+            />
           </TouchableOpacity>
         </View>
 
@@ -199,6 +232,12 @@ export const SearchScreen = () => {
             })}
           </View>
         )}
+        {loadingMore ? (
+          <ActivityIndicator
+            color={appColors.maroon}
+            style={{marginTop: scaleWidth(14)}}
+          />
+        ) : null}
       </ScrollView>
     </ImageBackground>
   );
